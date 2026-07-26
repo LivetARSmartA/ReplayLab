@@ -1,0 +1,1524 @@
+{
+  "source_pages": {
+    "heroes": "https://iccup.com/heroes/",
+    "items": "https://iccup.com/items/"
+  },
+  "downloaded_at": "2026-07-24T21:23:18.338402+00:00",
+  "notice": "Third-party images cached for local research/prototyping. Review redistribution rights before publishing.",
+  "heroes": {
+    "Admiral": {
+      "path": "iccup/heroes/admiral.png",
+      "source_url": "https://iccup.com/upload/images/heroes/kunkka_s_hid_5.png",
+      "sha256": "9b6f9f693fbcc44810a8edfeea045f581e91574fdf5a9b015f2ae6a35ee90216",
+      "bytes": 20936
+    },
+    "Alchemist": {
+      "path": "iccup/heroes/alchemist.jpg",
+      "source_url": "https://iccup.com/upload/images/heroes/4_s_hid_8.jpg",
+      "sha256": "80073dd6f4ab8da04fa37b85c5505e26d3ecd3bbba5a6224e8319170eb035979",
+      "bytes": 1793
+    },
+    "Ancient Apparition": {
+      "path": "iccup/heroes/ancient_apparition.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Icyghost_s_hid_115.png",
+      "sha256": "8590572a9e57f0578e43d51a99c79ae83b24340f9be065eaea805900a5c088f3",
+      "bytes": 22583
+    },
+    "Anti-Mage": {
+      "path": "iccup/heroes/anti_mage.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Magina_s_hid_25.png",
+      "sha256": "cc3a7b24a9cf00ac94572bc5f07056bee0dafc0111a5b506e9a59fceb7cfe3f8",
+      "bytes": 21152
+    },
+    "Arc Warden": {
+      "path": "iccup/heroes/arc_warden.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Zet_s_hid_107.png",
+      "sha256": "01ff3ac634d00bb946465ef611c7d3491a24c5674decdeebd273f03c74109663",
+      "bytes": 20492
+    },
+    "Axe": {
+      "path": "iccup/heroes/axe.png",
+      "source_url": "https://iccup.com/upload/images/heroes/MogulKhan_s_hid_36.png",
+      "sha256": "f6db701de95b244e7725c9dd57eb03d7de8dea9417139fe267113d39c0b11ea0",
+      "bytes": 20916
+    },
+    "Bane Elemental": {
+      "path": "iccup/heroes/bane_elemental.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Atropos_s_hid_86.png",
+      "sha256": "96e2d894682cea655fc4fa36b34c9ea3670750de01acbc649902147378f3bb27",
+      "bytes": 21030
+    },
+    "Batrider": {
+      "path": "iccup/heroes/batrider.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Jinzakk_s_hid_108.png",
+      "sha256": "1846d9756d5aa9d438a78b744162265532dc30193a6123ee889676f10e19f8e7",
+      "bytes": 22644
+    },
+    "Beastmaster": {
+      "path": "iccup/heroes/beastmaster.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Rexxar_s_hid_9.png",
+      "sha256": "48919c26d9f1d54072e22135db2d92822384a8bc0e5aa0ffcf1db0a264795b90",
+      "bytes": 20968
+    },
+    "Bloodseeker": {
+      "path": "iccup/heroes/bloodseeker.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Strygwyr_s_hid_47.png",
+      "sha256": "9df25d7ab9cf3fa28cf94a1395244bc3aa19b62cd3d26612f0b32a137298eab7",
+      "bytes": 21081
+    },
+    "Bone Fletcher": {
+      "path": "iccup/heroes/bone_fletcher.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Clinkz_s_hid_48.png",
+      "sha256": "f6ee098e820a5d0be012980f3852cd7f0ec013c449ce7bfa4720318e5f24c77a",
+      "bytes": 21135
+    },
+    "Bounty Hunter": {
+      "path": "iccup/heroes/bounty_hunter.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Gondar_s_hid_74.png",
+      "sha256": "692e5c2f923fbb5c6fb0fb1a52b8887566504fb9cdd27b1077e10fca68e2f4b0",
+      "bytes": 21169
+    },
+    "Bristleback": {
+      "path": "iccup/heroes/bristleback.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Rigwarl_s_hid_24.png",
+      "sha256": "f873381e30bdfb18868dead7a2f7f4173854473af6ce97d5fe704d9b379a5dc7",
+      "bytes": 23135
+    },
+    "Broodmother": {
+      "path": "iccup/heroes/broodmother.png",
+      "source_url": "https://iccup.com/upload/images/heroes/BlackArachnia_s_hid_49.png",
+      "sha256": "9b6791390a70d707f6f4462dd2078400c4e4dd041c9b2d8024f5b9a999489a19",
+      "bytes": 20935
+    },
+    "Centaur Warchief": {
+      "path": "iccup/heroes/centaur_warchief.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Bradwarden_s_hid_10.png",
+      "sha256": "3b8e0fdeea4bafc60114d6d75a64ba81001f25de856b06182d861f9d8ca4d8ba",
+      "bytes": 21108
+    },
+    "Chaos Knight": {
+      "path": "iccup/heroes/chaos_knight.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Nessaj_s_hid_37.png",
+      "sha256": "8a0bea3513780e67793ba2b1359e4559c8ac640f57c5b0b1713cd43f722fbeb0",
+      "bytes": 20913
+    },
+    "Clockwerk Goblin": {
+      "path": "iccup/heroes/clockwerk_goblin.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Rattletrap_s_hid_21.png",
+      "sha256": "195626415e63f843888c2d347fca56abb9505116280d1513af878b14622b87f7",
+      "bytes": 20986
+    },
+    "Crystal Maiden": {
+      "path": "iccup/heroes/crystal_maiden.png",
+      "source_url": "https://iccup.com/upload/images/heroes/RylaiCrestfall_s_hid_17.png",
+      "sha256": "8be37715e312768ebd656b31a9dd43ead714228027fa29367ccc5b96e6526b2c",
+      "bytes": 21020
+    },
+    "Dark Seer": {
+      "path": "iccup/heroes/dark_seer.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Ishkafel_s_hid_91.png",
+      "sha256": "63f2947eaa3d3d99a1a86692f05761ad882ce02df051f02a8a4c4ff384daa1ad",
+      "bytes": 20957
+    },
+    "Death Prophet": {
+      "path": "iccup/heroes/death_prophet.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Krobelus_s_hid_94.png",
+      "sha256": "c42f2c95d581d7c74522bdb7b436bfa930bcbdc039cb405c61efa8eab4583a8e",
+      "bytes": 21107
+    },
+    "Demon Witch": {
+      "path": "iccup/heroes/demon_witch.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Lion_s_hid_95.png",
+      "sha256": "2f58ec4a7c5e8563c8b2c3a624ced0fccfe50a4638f808dc7b54f831802cc19c",
+      "bytes": 21244
+    },
+    "Disruptor": {
+      "path": "iccup/heroes/disruptor.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Thrall_s_hid_79.png",
+      "sha256": "09791f88a00b50325989348263538b6c9649dd5efb320a260f42b09f6f5a557a",
+      "bytes": 21079
+    },
+    "Doom Bringer": {
+      "path": "iccup/heroes/doom_bringer.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Lucifer_s_hid_38.png",
+      "sha256": "6d3ce9a8a4057e4188e57f834ab75a8ea47473606ae1b3c88096a9e4d3e040f9",
+      "bytes": 21022
+    },
+    "Dragon Knight": {
+      "path": "iccup/heroes/dragon_knight.png",
+      "source_url": "https://iccup.com/upload/images/heroes/KnightDavion_s_hid_22.png",
+      "sha256": "be4be3008b058cd6811ab369e0086e2b23968e5b8aba1f3c3b17f0b218f27c15",
+      "bytes": 21093
+    },
+    "Drow Ranger": {
+      "path": "iccup/heroes/drow_ranger.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Traxex_s_hid_64.png",
+      "sha256": "516cb8eba5b1338fc5daac77276f496c64bed098f1892b4ef400f7439f3e6224",
+      "bytes": 21077
+    },
+    "Dwarven Sniper": {
+      "path": "iccup/heroes/dwarven_sniper.png",
+      "source_url": "https://iccup.com/upload/images/heroes/KardelSharpeye_s_hid_31.png",
+      "sha256": "bc817cb43d21066581da2373271fa135b63dec47d0d1f9598c79049f4a4c4794",
+      "bytes": 20874
+    },
+    "Earth Spirit": {
+      "path": "iccup/heroes/earth_spirit.png",
+      "source_url": "https://iccup.com/upload/images/heroes/EarthSpirit_s_hid_30.png",
+      "sha256": "5f01a81495432d249d837f9e982645c09eb7cb0465d722392dd97042c56f9fbb",
+      "bytes": 22319
+    },
+    "Earthshaker": {
+      "path": "iccup/heroes/earthshaker.png",
+      "source_url": "https://iccup.com/upload/images/heroes/RaigorStonehoof_s_hid_11.png",
+      "sha256": "2967a107cfb3d3b97241503219c99877b18b30da80707a74898f9f12ce4b3ee2",
+      "bytes": 21014
+    },
+    "Ember Spirit": {
+      "path": "iccup/heroes/ember_spirit.png",
+      "source_url": "https://iccup.com/upload/images/heroes/EmberSpirit_s_hid_80.png",
+      "sha256": "c1805b089700eaf98947fcb6e2de23bec5223a4db048b62644e26f5ce9e19c58",
+      "bytes": 22662
+    },
+    "Enchantress": {
+      "path": "iccup/heroes/enchantress.jpg",
+      "source_url": "https://iccup.com/upload/images/heroes/icon (1)_s_hid_18.jpg",
+      "sha256": "2964387534a54122c43790ad2f659c8db3ee22dd9ceef280f199c18ece722f5e",
+      "bytes": 1621
+    },
+    "Enigma": {
+      "path": "iccup/heroes/enigma.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Darchrow_s_hid_96.png",
+      "sha256": "4ecef3ef72ddfda9100b20ccd32ddb7cf17267b137198eaf1600580fc42cb85a",
+      "bytes": 20754
+    },
+    "Faceless Void": {
+      "path": "iccup/heroes/faceless_void.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Darkterror_s_hid_68.png",
+      "sha256": "05188ec4e709ba0df21db3d84b39f0e460e9adf43df49d2922439bfd28e14183",
+      "bytes": 21003
+    },
+    "Faerie Dragon": {
+      "path": "iccup/heroes/faerie_dragon.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Puck_s_hid_19.png",
+      "sha256": "4c107ad4be7097578cf1dfed56edc918f1345d3573cffe273c112cc3ce25a5b7",
+      "bytes": 20867
+    },
+    "Geomancer": {
+      "path": "iccup/heroes/geomancer.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Meepo_s_hid_61.png",
+      "sha256": "2249897313aa07683df944248a2ae5cda7f08f5718b4ce2c267dc98ea1421d6a",
+      "bytes": 20976
+    },
+    "Goblin Shredder": {
+      "path": "iccup/heroes/goblin_shredder.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Rizzrak_s_hid_29.png",
+      "sha256": "21dacf62f0e67645a2bc2bc27bbbc1edcd2b51bab836125d4ecae711d01c351d",
+      "bytes": 23355
+    },
+    "Goblin Techies": {
+      "path": "iccup/heroes/goblin_techies.png",
+      "source_url": "https://iccup.com/upload/images/heroes/SqueeSpleenandSpoon_s_hid_84.png",
+      "sha256": "74260f57f0425ffddf7bc3d2d23045df5040fe2e4c96662b9ce48533c94f78de",
+      "bytes": 21126
+    },
+    "Gorgon": {
+      "path": "iccup/heroes/gorgon.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Medusa_s_hid_106.png",
+      "sha256": "0524d970ffc8929be1628b4cdf74d2adb2bdbd6002f7ffecafb0379c050c9335",
+      "bytes": 21115
+    },
+    "Grand Magus": {
+      "path": "iccup/heroes/grand_magus.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Rubik_s_hid_90.png",
+      "sha256": "54fe74d71a6cdeb84161f469bb39556e562b1fec6bc532244c4bb46e3e2b84e2",
+      "bytes": 23046
+    },
+    "Guardian Wisp": {
+      "path": "iccup/heroes/guardian_wisp.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Io_s_hid_7.png",
+      "sha256": "c312acd9ae126edc3f15a84428b78510423504f735b095bb0750c6213d62f791",
+      "bytes": 21316
+    },
+    "Gyrocopter": {
+      "path": "iccup/heroes/gyrocopter.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Aurel Vlaicu_s_hid_97.png",
+      "sha256": "8f6a2e6806d3cc97fc1260a33eb338252bda3588e15e2c1ab6d3f975bae87d85",
+      "bytes": 21364
+    },
+    "Holy Knight": {
+      "path": "iccup/heroes/holy_knight.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Chen_s_hid_20.png",
+      "sha256": "e2085d3b2194865c23db3a74b1fa60ba6692968526359e38aa066280a3d0777d",
+      "bytes": 21011
+    },
+    "Invoker": {
+      "path": "iccup/heroes/invoker.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Kael_s_hid_111.png",
+      "sha256": "55c03dc35bfc5969214dcbe78708c81ea1f69e718994166ad5ee55011ea5c19a",
+      "bytes": 20924
+    },
+    "Juggernaut": {
+      "path": "iccup/heroes/juggernaut.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Yurnero_s_hid_55.png",
+      "sha256": "82cc9aef90d4a6fcfd73f3fe436671dc8e804d15f47fa3fe8a39aa93e64d6602",
+      "bytes": 21151
+    },
+    "Keeper of the Light": {
+      "path": "iccup/heroes/keeper_of_the_light.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Ezalor_s_hid_73.png",
+      "sha256": "b61acd6475936a8a0ea59946687cc8f5601232c6b201429973935864bd81a884",
+      "bytes": 20928
+    },
+    "Legion Commander": {
+      "path": "iccup/heroes/legion_commander.png",
+      "source_url": "https://iccup.com/upload/images/heroes/LegionCommander_s_hid_28.png",
+      "sha256": "647e4017684b8555dd83cb02780c3f9e51db8a338e2e0f2e8c32ecbccd1d50af",
+      "bytes": 22545
+    },
+    "Lich": {
+      "path": "iccup/heroes/lich.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Kelthuzad_s_hid_98.png",
+      "sha256": "4af8f0c36d7f22ced1f528497f5f6d27eb27506cca5cfbb5f76b47b3e14ab66a",
+      "bytes": 21205
+    },
+    "Lifestealer": {
+      "path": "iccup/heroes/lifestealer.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Naix_s_hid_39.png",
+      "sha256": "a25d4fab6faafcf618a054a62a018966ee3d2e2d37d5e56d7900067022718ba4",
+      "bytes": 21084
+    },
+    "Lighting Revenant": {
+      "path": "iccup/heroes/lighting_revenant.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Razor_s_hid_66.png",
+      "sha256": "bf1b7b01670dc2e826fb6681005496167db5159250adfc285479b7883d17de7f",
+      "bytes": 20926
+    },
+    "Lone Druid": {
+      "path": "iccup/heroes/lone_druid.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Syllabear_s_hid_58.png",
+      "sha256": "e76ebeb8d3c1de6b4cbdcb729d4e16b83b5cb201f523e40beac766e1a7db33dc",
+      "bytes": 21088
+    },
+    "Lord of Avernus": {
+      "path": "iccup/heroes/lord_of_avernus.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Abaddon_s_hid_40.png",
+      "sha256": "3f43e185991b2699e4733fdc420b8870e20c6a8f754286553042f879d9ffdd77",
+      "bytes": 21169
+    },
+    "Lord of Olympia": {
+      "path": "iccup/heroes/lord_of_olympia.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Zeus_s_hid_82.png",
+      "sha256": "52cf35f30d82a90d1a36fb2063bec2f10d82ef7621b11d2e01fa1a16ed1dd6c7",
+      "bytes": 21233
+    },
+    "Lycanthrope": {
+      "path": "iccup/heroes/lycanthrope.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Banehallow_s_hid_41.png",
+      "sha256": "cbcaff55bf96c1909f99661d7d03dec0b418c70374338a62e95067f59ca4d584",
+      "bytes": 21017
+    },
+    "Magnataur": {
+      "path": "iccup/heroes/magnataur.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Magnus_s_hid_33.png",
+      "sha256": "7e491ec7ea0c339c76420ac35b4fd8ac3bae22bbae643772b693cc9b597e4074",
+      "bytes": 21205
+    },
+    "Moon Rider": {
+      "path": "iccup/heroes/moon_rider.png",
+      "source_url": "https://iccup.com/upload/images/heroes/LunaMoonfang_s_hid_62.png",
+      "sha256": "947732d28d0b79fcec2dc7942e6ddc410a8e3be38fa4695b5e83fcc8cf516d9f",
+      "bytes": 21010
+    },
+    "Morphling": {
+      "path": "iccup/heroes/morphling.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Morphling_s_hid_70.png",
+      "sha256": "b7e19aa2a64994f641dec663a3109233f96074b05f8c27c56f4b82320cbcf5e7",
+      "bytes": 20931
+    },
+    "Murloc Nightcrawler": {
+      "path": "iccup/heroes/murloc_nightcrawler.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Morgul_s_hid_67.png",
+      "sha256": "13ca1f98d05298252ecc429e8010f46f05e3fcd9ef3c66b5de65ec4acc98f0d2",
+      "bytes": 21269
+    },
+    "Naga Siren": {
+      "path": "iccup/heroes/naga_siren.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Slithice_s_hid_71.png",
+      "sha256": "76667256a471a06ca6fe34d8d9152eb0c94e580708f9ed6809c33054eaa12f9f",
+      "bytes": 20871
+    },
+    "Necro`lic": {
+      "path": "iccup/heroes/necro_lic.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Visage_s_hid_112.png",
+      "sha256": "e960a99830d92fe087aa881a3ebe2ae1ea527640b2b6ffccde2535753c06282f",
+      "bytes": 20858
+    },
+    "Necrolyte": {
+      "path": "iccup/heroes/necrolyte.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Rotundjere_s_hid_100.png",
+      "sha256": "2ccf271e9f3157ccc427195e703d8cab11918815308687fe618f41add3dc3565",
+      "bytes": 20653
+    },
+    "Nerubian Assassin": {
+      "path": "iccup/heroes/nerubian_assassin.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Anubarak_s_hid_50.png",
+      "sha256": "3176e976a750318b0ac0d5ce2094aa7664e17ac0a055d9eee661f26250c35b12",
+      "bytes": 21141
+    },
+    "Nerubian Weaver": {
+      "path": "iccup/heroes/nerubian_weaver.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Anubseran_s_hid_51.png",
+      "sha256": "f11f99c8af286642ce20efdd275fc4528349809e3a8fcb117333dd192528eda9",
+      "bytes": 21021
+    },
+    "Netherdrake": {
+      "path": "iccup/heroes/netherdrake.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Viper_s_hid_60.png",
+      "sha256": "080750c5e5892f67f738cf4c096252d801356c84a947cad2439770c762830d2b",
+      "bytes": 20894
+    },
+    "Night Stalker": {
+      "path": "iccup/heroes/night_stalker.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Balanar_s_hid_42.png",
+      "sha256": "85f9a1b0324313ac69bf1fae4b715e3760947064bf0252e2ca55c4f7601e4a69",
+      "bytes": 21066
+    },
+    "Oblivion": {
+      "path": "iccup/heroes/oblivion.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Pugna_s_hid_101.png",
+      "sha256": "bd3eaeec94f3167ac51d0a764d745b840d973690068e67678a43c2beeeb4b357",
+      "bytes": 21152
+    },
+    "Obsidian Destroyer": {
+      "path": "iccup/heroes/obsidian_destroyer.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Harbinger_s_hid_102.png",
+      "sha256": "3795990b8b81ac706002d1cddd2e7072f2f77ab1350d69acc25be651c6fe62ad",
+      "bytes": 21253
+    },
+    "Ogre Magi": {
+      "path": "iccup/heroes/ogre_magi.png",
+      "source_url": "https://iccup.com/upload/images/heroes/AggronStonebreaker_s_hid_83.png",
+      "sha256": "b8ed3e3cfd0171ac2274d72bf51c4edae358e6fce065ec6f7d818685c2affe9a",
+      "bytes": 20904
+    },
+    "Omniknight": {
+      "path": "iccup/heroes/omniknight.png",
+      "source_url": "https://iccup.com/upload/images/heroes/PuristThunderwrath_s_hid_12.png",
+      "sha256": "0027363bf2de2bccdfceeba2dfb1a761b5322aa7ec8ff06287040ed6d58e57cf",
+      "bytes": 21027
+    },
+    "Oracle": {
+      "path": "iccup/heroes/oracle.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Nerif_s_hid_93.png",
+      "sha256": "273e6fd055fe1456c120ff4b81a4a484da0cbded20117097ab2427ab16393bc7",
+      "bytes": 21119
+    },
+    "Pandaren Brewmaster": {
+      "path": "iccup/heroes/pandaren_brewmaster.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Mangix_s_hid_13.png",
+      "sha256": "37f5061930f56c6f5c9bde80ea1f664dcb34c2beade632e18a0a913d0fe31a3b",
+      "bytes": 21010
+    },
+    "Phantom Assassin": {
+      "path": "iccup/heroes/phantom_assassin.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Mortred_s_hid_52.png",
+      "sha256": "4acb9a0f7f7708fdfa5df38f980a62646090cc5d1bc933fec00c50649604d04b",
+      "bytes": 20945
+    },
+    "Phantom Lancer": {
+      "path": "iccup/heroes/phantom_lancer.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Azwraith_s_hid_72.png",
+      "sha256": "4eb3ab2a390b5e1d6a968fc10b74b8bdbaf0083462e4e100cbd35baf81f2f4ca",
+      "bytes": 20940
+    },
+    "Phoenix": {
+      "path": "iccup/heroes/phoenix.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Phoenix_s_hid_26.png",
+      "sha256": "e18dd095e007e4a7afe86ed52caaae8ba7cff8142dc982263074f6d62f825dd6",
+      "bytes": 22913
+    },
+    "Pit Lord": {
+      "path": "iccup/heroes/pit_lord.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Azgalor_s_hid_43.png",
+      "sha256": "4fe2664b9ec3d9ef77c1f5d72e78c217c4444075f0061dd62f9e95c9eea05209",
+      "bytes": 21113
+    },
+    "Priestess Of The Moon": {
+      "path": "iccup/heroes/priestess_of_the_moon.png",
+      "source_url": "https://iccup.com/upload/images/heroes/MiranaNightshade_s_hid_85.png",
+      "sha256": "8d54f49101f7780162b9a914f7a377d2a1e9a7c33a2364b82dbe0e79fad46454",
+      "bytes": 21210
+    },
+    "Prophet": {
+      "path": "iccup/heroes/prophet.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Furion_s_hid_75.png",
+      "sha256": "1d60310303dc7c78312eb6a0fef0f5586991c7b3d9c3a90155ed30ea16e6ac60",
+      "bytes": 21190
+    },
+    "Pudge": {
+      "path": "iccup/heroes/pudge.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Pudge_s_hid_4.png",
+      "sha256": "17904e2d1eea5d490add6c138b60f859b7c4467c6394de8d48908d0e9472c5d7",
+      "bytes": 21260
+    },
+    "Queen of Pain": {
+      "path": "iccup/heroes/queen_of_pain.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Akasha_s_hid_104.png",
+      "sha256": "5388b62673b6fad183fab545737b83171e2ed8f32593637a7e8c9ee8ec5976c2",
+      "bytes": 20815
+    },
+    "Rogue Knight": {
+      "path": "iccup/heroes/rogue_knight.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Sven_s_hid_14.png",
+      "sha256": "9fa618f3220175b36e4b1c6dbd65c9ee9631583acff5ddc624904e045cd8d242",
+      "bytes": 20917
+    },
+    "Sacred Warrior": {
+      "path": "iccup/heroes/sacred_warrior.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Huskar_s_hid_23.png",
+      "sha256": "a4d5fc9b0f2d6a960dc2e8ddf42981e11eb4b4dc26923b0c4f2ba364d0e91a75",
+      "bytes": 21141
+    },
+    "Sand King": {
+      "path": "iccup/heroes/sand_king.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Crixalis_s_hid_35.png",
+      "sha256": "cf0eb81302fc597ba4ad5f98289e9c8515d2a1bb4e2b7f4ae307ba84323a31f9",
+      "bytes": 21110
+    },
+    "Shadow Demon": {
+      "path": "iccup/heroes/shadow_demon.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Eredar_s_hid_109.png",
+      "sha256": "549111742e25fa887d2c60c289aebda8d2d660cfe6df490cc395b9a6078148cc",
+      "bytes": 23781
+    },
+    "Shadow Fiend": {
+      "path": "iccup/heroes/shadow_fiend.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Nevermore_s_hid_54.png",
+      "sha256": "60c17290df7112b4db092fe43625f9ef93d1884bbad913457c1d28533e089933",
+      "bytes": 21039
+    },
+    "Shadow Priest": {
+      "path": "iccup/heroes/shadow_priest.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Dazzle_s_hid_110.png",
+      "sha256": "ad9a811bc36f225964854cc5c923df29f95e55a96b7cd4b7f0c0ee4f9d333848",
+      "bytes": 20972
+    },
+    "Shadow Shaman": {
+      "path": "iccup/heroes/shadow_shaman.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Rhasta_s_hid_89.png",
+      "sha256": "932b5e9ef5248e174ed0f65b4a3a787ab2747f37172cec1a2b79d9ab2fd1c9e3",
+      "bytes": 21189
+    },
+    "Silencer": {
+      "path": "iccup/heroes/silencer.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Nortrom_s_hid_77.png",
+      "sha256": "7fe543a48456bc1832a423370ce36e59edae9e8603e19181daab3b8e902d021e",
+      "bytes": 21004
+    },
+    "Skeleton King": {
+      "path": "iccup/heroes/skeleton_king.jpg",
+      "source_url": "https://iccup.com/upload/images/heroes/BTNSkeletonArcher_s_hid_44.jpg",
+      "sha256": "4ebc971ae5febc6e58c592642d00547a85e8590fba3956615da7d0534d847b35",
+      "bytes": 1771
+    },
+    "Skywrath Mage": {
+      "path": "iccup/heroes/skywrath_mage.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Dragonus_s_hid_92.png",
+      "sha256": "29effe0fa4ed65c09ccadf4c11dba0b6f8ceaa266c49e42b540a0cfd501760ee",
+      "bytes": 23419
+    },
+    "Slayer": {
+      "path": "iccup/heroes/slayer.png",
+      "source_url": "https://iccup.com/upload/images/heroes/LinaInverse_s_hid_76.png",
+      "sha256": "3d6614f6af53ccd31c31a04c51484747f6da410d65226462977ef5ef1f6964cf",
+      "bytes": 20949
+    },
+    "Slithereen Guard": {
+      "path": "iccup/heroes/slithereen_guard.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Slardar_s_hid_45.png",
+      "sha256": "24a847a7d2ae2f2917199cce4335cb73cb331ad079c3c06c8660e3433f2baae6",
+      "bytes": 21139
+    },
+    "Soul Keeper": {
+      "path": "iccup/heroes/soul_keeper.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Terrorblade_s_hid_56.png",
+      "sha256": "b2a9f687cc617347b7125f19510bf6dc20b9884c7548f4f7c609653fb2d2e940",
+      "bytes": 21072
+    },
+    "Spectre": {
+      "path": "iccup/heroes/spectre.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Mercurial_s_hid_57.png",
+      "sha256": "4cd1937da685c0aae42870d26c94ff8c786370cdd3684f162525372811ca0a5d",
+      "bytes": 21055
+    },
+    "Spiritbreaker": {
+      "path": "iccup/heroes/spiritbreaker.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Barathrum_s_hid_34.png",
+      "sha256": "4690177588f8247608621c8e69e5b15279d88eb7996b95547c9607090df3d3bc",
+      "bytes": 21172
+    },
+    "Stealth Assasin": {
+      "path": "iccup/heroes/stealth_assasin.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Rikimaru_s_hid_63.png",
+      "sha256": "54e42e5293d0b78ebf21da174309ca5582ebc329cb835b4ecf0ea3d435e2f6d8",
+      "bytes": 21305
+    },
+    "Stone Giant": {
+      "path": "iccup/heroes/stone_giant.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Tiny_s_hid_15.png",
+      "sha256": "0d9ccaca284d6c5bff6733712c79de3fce98100e71d3b219f979ff02503471d5",
+      "bytes": 21229
+    },
+    "Storm Spirit": {
+      "path": "iccup/heroes/storm_spirit.png",
+      "source_url": "https://iccup.com/upload/images/heroes/RaijinThunderkeg_s_hid_78.png",
+      "sha256": "278129c4244a99fd75b228b528f3a5f47cbbc517b4701710cdf2cfa69c67d96f",
+      "bytes": 20813
+    },
+    "Tauren Chieftain": {
+      "path": "iccup/heroes/tauren_chieftain.png",
+      "source_url": "https://iccup.com/upload/images/heroes/CairneBloodhoof_s_hid_16.png",
+      "sha256": "7d133a9cfd114cd4965022f03a8eb5b07ce6c07b9a98b48da3d709ca7797f4c9",
+      "bytes": 23525
+    },
+    "Templar Assassin": {
+      "path": "iccup/heroes/templar_assassin.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Lanaya_s_hid_65.png",
+      "sha256": "295064c2e90922d382577b782bcf4ed962b2ea810806d20944a8b44361e90ce9",
+      "bytes": 20427
+    },
+    "Tidehunter": {
+      "path": "iccup/heroes/tidehunter.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Leviathan_s_hid_32.png",
+      "sha256": "d3a59dc6fc85d2602bdc6fa37ee5ed4404120ad21210e2c012300cc5542bdbd0",
+      "bytes": 20957
+    },
+    "Tinker": {
+      "path": "iccup/heroes/tinker.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Boush_s_hid_88.png",
+      "sha256": "7e9fd4d8dc186e0533afe43b37621df1c025b37a7dbf0bd4bd2d814bf644e421",
+      "bytes": 20924
+    },
+    "Tormented Soul": {
+      "path": "iccup/heroes/tormented_soul.png",
+      "source_url": "https://iccup.com/upload/images/heroes/LeshractheMalicious_s_hid_113.png",
+      "sha256": "6019c1bca8263e0d42dd844437a17f4796be5981870a6837e2d07862ef4f35ce",
+      "bytes": 20883
+    },
+    "Treant Protector": {
+      "path": "iccup/heroes/treant_protector.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Rooftrellen_s_hid_6.png",
+      "sha256": "c57d3d47c3d0cecc6b0f9d5614204d0d013023359cf165ff26e8181cc0abf57d",
+      "bytes": 21288
+    },
+    "Troll Warlord": {
+      "path": "iccup/heroes/troll_warlord.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Jahrakal_s_hid_69.png",
+      "sha256": "daa9b1ad1c45b544151c21b514e27fc822a833b4b4b7fa349530b5388ecdc8a7",
+      "bytes": 21134
+    },
+    "Twin Head Dragon": {
+      "path": "iccup/heroes/twin_head_dragon.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Jakiro_s_hid_87.png",
+      "sha256": "5ce4656c9af3803c7ddc825bb1bd15529468086be804452eb1d60c5cd5b3c720",
+      "bytes": 21033
+    },
+    "Undying": {
+      "path": "iccup/heroes/undying.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Dirge_s_hid_46.png",
+      "sha256": "e38e7efcd3efb8ee531137412e8217a3ee00cb79e434e50756547bcbc054fc74",
+      "bytes": 20893
+    },
+    "Ursa Warrior": {
+      "path": "iccup/heroes/ursa_warrior.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Ulfsaar_s_hid_99.png",
+      "sha256": "e94363b34c25ed33246a6d3ad6c4a049300299d6b0c5bee5e0dc8813b5fb26f5",
+      "bytes": 21023
+    },
+    "Vengeful Spirit": {
+      "path": "iccup/heroes/vengeful_spirit.png",
+      "source_url": "https://iccup.com/upload/images/heroes/ShendelzareSilkwood_s_hid_103.png",
+      "sha256": "c18d0b175a63d4aff31e7d1fba89c55523493bbdb916daa79a08dbd5d834fb5a",
+      "bytes": 21069
+    },
+    "Venomancer": {
+      "path": "iccup/heroes/venomancer.png",
+      "source_url": "https://iccup.com/upload/images/heroes/LesaleDeathbringer_s_hid_59.png",
+      "sha256": "251c7d700bc2019d00c99d00025d6701f5c0dd413977fe0e0d63f9122efebdf4",
+      "bytes": 21108
+    },
+    "Warlock": {
+      "path": "iccup/heroes/warlock.png",
+      "source_url": "https://iccup.com/upload/images/heroes/DemnokLannik_s_hid_105.png",
+      "sha256": "d14a8f9f1b45da444e2a120d1892b69e3b753330e96c88720491654c94db2d3e",
+      "bytes": 20898
+    },
+    "Windrunner": {
+      "path": "iccup/heroes/windrunner.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Alleria_s_hid_81.png",
+      "sha256": "04669c9b989d2139bc5c398a03432e3c7eadfa1a42768ac989bacc2c565e79a1",
+      "bytes": 20842
+    },
+    "Winter Wyvern": {
+      "path": "iccup/heroes/winter_wyvern.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Auroth_s_hid_116.png",
+      "sha256": "8aaee5e1d7ed69490fef361bafc6ac0f52142e3f6982a583b5092e9b837724e9",
+      "bytes": 20903
+    },
+    "Witch Doctor": {
+      "path": "iccup/heroes/witch_doctor.png",
+      "source_url": "https://iccup.com/upload/images/heroes/VolJin_s_hid_114.png",
+      "sha256": "c86ad9929910e78c82268622d9850a4d5704f35483104c9936501587d7a4f8bf",
+      "bytes": 21053
+    },
+    "Ymir": {
+      "path": "iccup/heroes/ymir.png",
+      "source_url": "https://iccup.com/upload/images/heroes/Tuskarr_s_hid_27.png",
+      "sha256": "23ecad9302061d4e352eb69981bc56fbe41d4a2ef630dadda6278d27a35368a5",
+      "bytes": 23104
+    }
+  },
+  "items": {
+    "Abyssal Blade": {
+      "path": "iccup/items/abyssal_blade.png",
+      "source_url": "https://iccup.com/upload/images/items/abyssal_blade_abisalniy_klinok_dota.png",
+      "sha256": "b6a1d866111cc0118ef2acd6a9e4bbebee07814ed8e9ea9929c11d5816b64d10",
+      "bytes": 7380
+    },
+    "Aegis of the Immortal": {
+      "path": "iccup/items/aegis_of_the_immortal.gif",
+      "source_url": "https://cdn.w3dota.com/items/BTNArcaniteArmor.gif",
+      "sha256": "e5ff6f36a67ec03dc6de6e87599d91442caf0493b25a33129cdd69a3e8338bab",
+      "bytes": 5120
+    },
+    "Aghanim's Grace": {
+      "path": "iccup/items/aghanim_s_grace.png",
+      "source_url": "https://iccup.com/upload/images/items/Grace[1].png",
+      "sha256": "1891a9e7a17c8d43e3aeb29b6ac29de70e41ceab582534116b688237c3f471b6",
+      "bytes": 5969
+    },
+    "Aghanims Scepter": {
+      "path": "iccup/items/aghanims_scepter.png",
+      "source_url": "https://iccup.com/upload/images/items/aghanim_s_scepter_skipetr_aganima_dota.png",
+      "sha256": "ffec412afaf59ce832ba04fdd9fa23b29d7b958966fe883d00909cfa8f6f51da",
+      "bytes": 7915
+    },
+    "Ancient Janggo of Endurance": {
+      "path": "iccup/items/ancient_janggo_of_endurance.png",
+      "source_url": "https://iccup.com/upload/images/items/ancient_janggo_of_endurance_drevniy_buben_vinoslivosti_dota.png",
+      "sha256": "9adbba31d019844872f9baa3433143f6f2234c802c64a934c3bfe92c976d2f5b",
+      "bytes": 7380
+    },
+    "Ancient Tango of Essifation": {
+      "path": "iccup/items/ancient_tango_of_essifation.png",
+      "source_url": "https://iccup.com/upload/images/items/ancient_tango_of_essifation_drevnee_tango_dota.png",
+      "sha256": "914b979c0f321a19cc66ab7f6b65f41a619c5417614b0fac5add2614bbc27fcb",
+      "bytes": 7564
+    },
+    "Arcane Boots": {
+      "path": "iccup/items/arcane_boots.png",
+      "source_url": "https://iccup.com/upload/images/items/arcane_boots_temnie_sapogi_dota.png",
+      "sha256": "a64b78a934b74e3bb894d1b53e459dadb829a2c79951bfa7c44c3480a091b421",
+      "bytes": 7237
+    },
+    "Armlet of Mordiggian": {
+      "path": "iccup/items/armlet_of_mordiggian.png",
+      "source_url": "https://iccup.com/upload/images/items/armlet_of_mordiggian_braslet_mordiggana_dota.png",
+      "sha256": "d63690798e817ef27a1eb328a13fc53e819efe6f8c4b5daadc32058095977d4b",
+      "bytes": 8226
+    },
+    "Assault Cuirass": {
+      "path": "iccup/items/assault_cuirass.png",
+      "source_url": "https://iccup.com/upload/images/items/assault_cuirass_kirasa_napadeniya_dota.png",
+      "sha256": "d4af24cd1d7acef4b08f1604e34e7c7ccefc5b3746e2965ac519d68c5823337e",
+      "bytes": 6640
+    },
+    "Battle Fury": {
+      "path": "iccup/items/battle_fury.png",
+      "source_url": "https://iccup.com/upload/images/items/battle_fury_yarost_bitvi_dota.png",
+      "sha256": "5385be0536be402e3b9bd233200c80ced21d4ab33a4ab44d12bf841ec71e90d7",
+      "bytes": 7051
+    },
+    "Belt of Giant Strength": {
+      "path": "iccup/items/belt_of_giant_strength.png",
+      "source_url": "https://iccup.com/upload/images/items/belt_of_giant_strength_poyas_gigantskoy_sili_dota.png",
+      "sha256": "6d3262ef7fd0f26dc9331272ceb4d3fa0a308f993266e409ff572f5c41701a9b",
+      "bytes": 8028
+    },
+    "Black King Bar": {
+      "path": "iccup/items/black_king_bar.png",
+      "source_url": "https://iccup.com/upload/images/items/black_king_bar_cherniy_posoh_bkb_dota.png",
+      "sha256": "2e8c41efbbe80d458362962e933db44ebc59dde873467c087b8eaa58f4206baa",
+      "bytes": 8394
+    },
+    "Blade Mail": {
+      "path": "iccup/items/blade_mail.png",
+      "source_url": "https://iccup.com/upload/images/items/blade_mail_ostraya_kolchuga_dota.png",
+      "sha256": "bc92219ac1974a6c60b1682d4fdd81f500df21270a9f1e37ddf33ba248bef2f0",
+      "bytes": 7815
+    },
+    "Blade of Alacrity": {
+      "path": "iccup/items/blade_of_alacrity.png",
+      "source_url": "https://iccup.com/upload/images/items/blade_of_alacrity_klinok_provorstva_dota.png",
+      "sha256": "0a6bdb796ef9c5f7fdbebf2ad200e63311d6beec75fff414d39464bf77b9497f",
+      "bytes": 6057
+    },
+    "Blades of Attack": {
+      "path": "iccup/items/blades_of_attack.png",
+      "source_url": "https://iccup.com/upload/images/items/blades_of_attack_nozhi_dota.png",
+      "sha256": "1aa3b865ec836be4a242cf52f02958f3f6ccdd7cd7cc3e5389dcfee007304de2",
+      "bytes": 7124
+    },
+    "Bloodstone": {
+      "path": "iccup/items/bloodstone.png",
+      "source_url": "https://iccup.com/upload/images/items/bloodstone_kamen_krovi_dota.png",
+      "sha256": "1d85dac887b500bb6202b10388f4a97993eab354312ff50a332916d93c6f6816",
+      "bytes": 7413
+    },
+    "Boots of Elvenskin": {
+      "path": "iccup/items/boots_of_elvenskin.png",
+      "source_url": "https://iccup.com/upload/images/items/boots_of_elvenskin_sapogi_elfa_dota.png",
+      "sha256": "009b16b01e34807f1c6714d70faeba724ff6afbcbc79838ee5d1b5d038560560",
+      "bytes": 7579
+    },
+    "Boots of Speed": {
+      "path": "iccup/items/boots_of_speed.png",
+      "source_url": "https://iccup.com/upload/images/items/boots_of_speed_sapogi_skorosti_dota.png",
+      "sha256": "a474ac64a31b259ca64fa7b043978d758fa519cf7c4893ee62b5e6f637fe5050",
+      "bytes": 7144
+    },
+    "Boots of Travel": {
+      "path": "iccup/items/boots_of_travel.png",
+      "source_url": "https://iccup.com/upload/images/items/travi.png",
+      "sha256": "678cd53ce6f07ba8f839e6be07b1f75ee439a3c4ff2f2a42a2d4a0bb02e3c5ca",
+      "bytes": 7799
+    },
+    "Boots of Travel 2": {
+      "path": "iccup/items/boots_of_travel_2.png",
+      "source_url": "https://iccup.com/upload/images/items/343.png",
+      "sha256": "9dfdadb8476db46f522c20023e5d12bf7faaeb4c580c51039086d9dcee6dab9c",
+      "bytes": 6488
+    },
+    "Bracer": {
+      "path": "iccup/items/bracer.png",
+      "source_url": "https://iccup.com/upload/images/items/bracer_narukavnik_dota.png",
+      "sha256": "2d53572eae152ea7ef617e12cf8a9ae45ca01e2ff5ebed6b7cac5c03ab39fc72",
+      "bytes": 8380
+    },
+    "Broadsword": {
+      "path": "iccup/items/broadsword.png",
+      "source_url": "https://iccup.com/upload/images/items/broadsword_mech_dota.png",
+      "sha256": "ccbeb39a5964390f9bdc6c1dd1f19f418868ce922551bc7d5690d142b926510e",
+      "bytes": 4536
+    },
+    "Buriza-do Kyanon": {
+      "path": "iccup/items/buriza_do_kyanon.png",
+      "source_url": "https://iccup.com/upload/images/items/burize_do_kyanon_buriza_dota.png",
+      "sha256": "9eebfe7fb24a713b88eb3c322561653d75293824783d62ccbbf6d22dfe51227a",
+      "bytes": 7862
+    },
+    "Chainmail": {
+      "path": "iccup/items/chainmail.png",
+      "source_url": "https://iccup.com/upload/images/items/chainmail_kolchuga_dota.png",
+      "sha256": "f4155b727c7fc9c569c6c5f33674f27f3850a97e51b24fbd3ad2e6d7c1d0bc56",
+      "bytes": 6090
+    },
+    "Circlet of Nobility": {
+      "path": "iccup/items/circlet_of_nobility.png",
+      "source_url": "https://iccup.com/upload/images/items/circlet_of_nobility_venets_blagorodiya_dota.png",
+      "sha256": "14e988f905cfb0d004638763b260c79024c55aa3a9a71b5c56f05b9d35e185c7",
+      "bytes": 6442
+    },
+    "Clarity Potion": {
+      "path": "iccup/items/clarity_potion.png",
+      "source_url": "https://iccup.com/upload/images/items/clarity_potion_otvar_prosvetlenya_dota.png",
+      "sha256": "55b085480557670da192b55ebd3bb49f6b15a4174812451566fb02a3fb38647f",
+      "bytes": 7319
+    },
+    "Claymore": {
+      "path": "iccup/items/claymore.png",
+      "source_url": "https://iccup.com/upload/images/items/claymore_palash_dota.png",
+      "sha256": "cb79146fe4162c87fb1f0780bac4cfa471939a2d3d485fe6b0405bf13d7b1277",
+      "bytes": 7057
+    },
+    "Cranium Basher": {
+      "path": "iccup/items/cranium_basher.png",
+      "source_url": "https://iccup.com/upload/images/items/cranium_basher_basher_dota.png",
+      "sha256": "93a0d494dca701a44bc050e3ce703fa19f22488f272ea07295b947e8c5b5cd00",
+      "bytes": 6178
+    },
+    "Crimson Guard": {
+      "path": "iccup/items/crimson_guard.png",
+      "source_url": "https://iccup.com/upload/images/items/krimston.png",
+      "sha256": "ae364be8578833f8172f5468441d1f465ffc123748a93862aeab6c3d180be6ef",
+      "bytes": 5058
+    },
+    "Crystalys": {
+      "path": "iccup/items/crystalys.png",
+      "source_url": "https://iccup.com/upload/images/items/crystalys_kristalis_dota.png",
+      "sha256": "deb28115824ae0ae4db5f8d0404624d722adea66de7b5415db0635af0520b0d8",
+      "bytes": 6449
+    },
+    "Dagon": {
+      "path": "iccup/items/dagon.png",
+      "source_url": "https://iccup.com/upload/images/items/dagon_1_dagon_dota.png",
+      "sha256": "84e78d532eb3135360eaa8900a5f5dd368c15f804b0fdb02d1b0a50fc15c9afe",
+      "bytes": 7907
+    },
+    "Demon Edge": {
+      "path": "iccup/items/demon_edge.png",
+      "source_url": "https://iccup.com/upload/images/items/demon_edge_lezvie_demona_dota.png",
+      "sha256": "b7715f254f9ccda82d354f59d7b397147bbfc1a6011692279e8e94c3187d5a63",
+      "bytes": 8053
+    },
+    "Diffusal Blade": {
+      "path": "iccup/items/diffusal_blade.png",
+      "source_url": "https://iccup.com/upload/images/items/diffusal_blade_1_klinok_diffuzii_dota.png",
+      "sha256": "e854569451f797cbf00b6f1cd098cea1f1d6c76355878f33eb7612a460427a38",
+      "bytes": 7600
+    },
+    "Divine Rapier": {
+      "path": "iccup/items/divine_rapier.png",
+      "source_url": "https://iccup.com/upload/images/items/divine_rapire_rapira_dota.png",
+      "sha256": "d7f6b88aa5492ebcdd40009c524e1bd87291c39d1628129534679b0f0d13a914",
+      "bytes": 7212
+    },
+    "Dust of Appearance": {
+      "path": "iccup/items/dust_of_appearance.png",
+      "source_url": "https://iccup.com/upload/images/items/dust_of_appearance_poroshok_dota.png",
+      "sha256": "55565ef1d1e58164c0fff4313244bb1096d2d881410421cf92fb39e5b245ecf3",
+      "bytes": 7003
+    },
+    "Eaglehorn": {
+      "path": "iccup/items/eaglehorn.png",
+      "source_url": "https://iccup.com/upload/images/items/eaglehorn_luk_dota.png",
+      "sha256": "b1fa2242846e0243b59707a2df45e1d7154f1e428fbc0866886b4b943e1029c2",
+      "bytes": 6466
+    },
+    "Empty Bottle": {
+      "path": "iccup/items/empty_bottle.png",
+      "source_url": "https://iccup.com/upload/images/items/empty_bottle_pustaya_butil_dota.png",
+      "sha256": "fddf174a09bc16d3533293bdb1d5c52f6b8c926150e15c3fd1ed8db1022735c2",
+      "bytes": 6620
+    },
+    "Enchanted Mango": {
+      "path": "iccup/items/enchanted_mango.png",
+      "source_url": "https://iccup.com/upload/images/items/Items_Mango.png",
+      "sha256": "ef6cfffc0f3ecda516a9dd55f640739f3583ec70fbdc4179e9f2dacaae8bc80f",
+      "bytes": 7502
+    },
+    "Energy Booster": {
+      "path": "iccup/items/energy_booster.png",
+      "source_url": "https://iccup.com/upload/images/items/energy_booster_energeticheskiy_buster_dota.png",
+      "sha256": "8772e014b4ba786611cd286270e18f52e45cacef8c5edfc52ab9f2479d1315f4",
+      "bytes": 6128
+    },
+    "Ethereal Blade": {
+      "path": "iccup/items/ethereal_blade.png",
+      "source_url": "https://iccup.com/upload/images/items/ethereal_blade_efirnoe_lezvie_dota.png",
+      "sha256": "e3ef2e3b6e6d351138884a0f3790e1f7501de85514aa3656c5233f4594323e36",
+      "bytes": 7085
+    },
+    "Euls Scepter of Divinity": {
+      "path": "iccup/items/euls_scepter_of_divinity.png",
+      "source_url": "https://iccup.com/upload/images/items/eul_s_scepter_of_divinity_bozhestvenniy_skipetr_eula_dota.png",
+      "sha256": "724148f481d6a8a2b7d58daa9327581a55eef9548ef46f6ab04c5a3acb4b5c48",
+      "bytes": 7836
+    },
+    "Eye of Skadi": {
+      "path": "iccup/items/eye_of_skadi.png",
+      "source_url": "https://iccup.com/upload/images/items/eye_of_skadi_glaz_skadi_dota.png",
+      "sha256": "2713c7d9a840e703daf65f9bb48cf4dd6bdddedf474c3687e3a166ef8db39ad5",
+      "bytes": 8190
+    },
+    "Flying Courier": {
+      "path": "iccup/items/flying_courier.png",
+      "source_url": "https://iccup.com/upload/images/items/flying_courier.png",
+      "sha256": "b2c34ef0bd4294250cd3ad773825e7764875455f38916b627f8215ae989ab66c",
+      "bytes": 6852
+    },
+    "Force Staff": {
+      "path": "iccup/items/force_staff.png",
+      "source_url": "https://iccup.com/upload/images/items/force_staff_posoh_prinuzhdeniya_dota.png",
+      "sha256": "ff4381eae2e7610cfb28b696dd68089f7f77b582d6caf341b4f155edb4d7b1f6",
+      "bytes": 7618
+    },
+    "Gauntlets of Ogre Strength": {
+      "path": "iccup/items/gauntlets_of_ogre_strength.png",
+      "source_url": "https://iccup.com/upload/images/items/gauntlets_of_ogre_strength_rukavitsi_ogra_dota.png",
+      "sha256": "0bb846ceb519b901db2ece0fbf3ef0d19f17487b948a49f8c8911800b8c664e3",
+      "bytes": 8066
+    },
+    "Gem of True Sight": {
+      "path": "iccup/items/gem_of_true_sight.png",
+      "source_url": "https://iccup.com/upload/images/items/gem_of_true_sight_samotsvet_dota.png",
+      "sha256": "aced34b7901876170fedd66f81179d675fd320a1c11ab415e540533c5f027e61",
+      "bytes": 7568
+    },
+    "Ghost Scepter": {
+      "path": "iccup/items/ghost_scepter.png",
+      "source_url": "https://iccup.com/upload/images/items/ghost_scepter_prizrachniy_skipetr_dota.png",
+      "sha256": "a5be9637b97a3ab27e16a4692e6616ca00e255e9751ab9490720abba3e50c8a8",
+      "bytes": 7649
+    },
+    "Glimmer Cape": {
+      "path": "iccup/items/glimmer_cape.png",
+      "source_url": "https://iccup.com/upload/images/items/uts.png",
+      "sha256": "0c229b3d3d201e596b0211d2c6f2b12572f908c791f4a84a1dccbb2705a656d0",
+      "bytes": 6197
+    },
+    "Gloves of Haste": {
+      "path": "iccup/items/gloves_of_haste.png",
+      "source_url": "https://iccup.com/upload/images/items/gloves_of_haste_perchatki_toroplivosti_dota.png",
+      "sha256": "119684b9c9370ab88535fc76ee172232651ffc2cde1267851c889f24ac1b536a",
+      "bytes": 7675
+    },
+    "Guardian Greaves": {
+      "path": "iccup/items/guardian_greaves.png",
+      "source_url": "https://iccup.com/upload/images/items/uku.png",
+      "sha256": "c1ffd88110df0e0cb376766fff1f78174a0a47e74aa694e0906521bbe0f8cda7",
+      "bytes": 5889
+    },
+    "Guinsoos Scythe of Vyse": {
+      "path": "iccup/items/guinsoos_scythe_of_vyse.png",
+      "source_url": "https://iccup.com/upload/images/items/guinsoo_s_scythe_of_vyse_guinso_dota.png",
+      "sha256": "9002dcad27fa1e4f6b86bf55697f97ea7d8e1a7817b5689ef5b4d38ed061da79",
+      "bytes": 7984
+    },
+    "Hand of Midas": {
+      "path": "iccup/items/hand_of_midas.png",
+      "source_url": "https://iccup.com/upload/images/items/hand_of_midas_ruka_midasa_dota.png",
+      "sha256": "ee45f6e13e987c50a8ee3437f351557e0343f0eb8cee065b8646a03b2313b869",
+      "bytes": 8053
+    },
+    "Headdress of Rejuvenation": {
+      "path": "iccup/items/headdress_of_rejuvenation.png",
+      "source_url": "https://iccup.com/upload/images/items/headdress_of_rejuvenation_molodilnoe_odeyanie_dota.png",
+      "sha256": "5df6f26508dcd75026fff9a380ee9d9ed527a509c970271c2d9495af92a0a341",
+      "bytes": 7726
+    },
+    "Healing Salve": {
+      "path": "iccup/items/healing_salve.png",
+      "source_url": "https://iccup.com/upload/images/items/healing_salve_balzam_istseleniya_dota.png",
+      "sha256": "1d8be621f43cc8093964c1ff30b06c9ffc956f5630efda8414de5d81d3493aea",
+      "bytes": 7396
+    },
+    "Heart of Tarrasque": {
+      "path": "iccup/items/heart_of_tarrasque.png",
+      "source_url": "https://iccup.com/upload/images/items/heart_of_tarrasque_tarasik_dota.png",
+      "sha256": "3a852657cb9764e127370da6f2baeed75f780ee734cbcfcd1ff68f572fcba335",
+      "bytes": 6341
+    },
+    "Heavens Halberd": {
+      "path": "iccup/items/heavens_halberd.png",
+      "source_url": "https://iccup.com/upload/images/items/heavens_halberd_nebesa_alebarda_dota.png",
+      "sha256": "e80ad355351b87c8297c1f16d783703396e0cb0f2bcfd5c4911fd3833791923d",
+      "bytes": 6687
+    },
+    "Helm of Iron Will": {
+      "path": "iccup/items/helm_of_iron_will.png",
+      "source_url": "https://iccup.com/upload/images/items/helm_of_iron_will_shlem_zheleznoy_voli_dota.png",
+      "sha256": "ed6ec83e6990512df6265f47b3d3a7a77d39b5ad1a944e43012956fa25057606",
+      "bytes": 6996
+    },
+    "Helm of the Dominator": {
+      "path": "iccup/items/helm_of_the_dominator.png",
+      "source_url": "https://iccup.com/upload/images/items/helm_of_the_dominator_shlem_dominirovaniya_dota.png",
+      "sha256": "d1a5ffa6cd847d2ea22f805a74978963ed5623b262990a4ffe65191e67b62413",
+      "bytes": 7527
+    },
+    "Hood of Defiance": {
+      "path": "iccup/items/hood_of_defiance.png",
+      "source_url": "https://iccup.com/upload/images/items/hood_of_defiance_plashch_prenebrezheniya_dota.png",
+      "sha256": "3fbaf6cb52dd0b7823dcd04e352b35cc3e54360804422628370ce40b1858667a",
+      "bytes": 7185
+    },
+    "Hyperstone": {
+      "path": "iccup/items/hyperstone.png",
+      "source_url": "https://iccup.com/upload/images/items/hyperstone_giperstoun_dota.png",
+      "sha256": "7d4453561b6786b0578f4ca8f45fddb11cd503c851ecc5c9d42b41d4324ed215",
+      "bytes": 8383
+    },
+    "Ironwood Branch": {
+      "path": "iccup/items/ironwood_branch.png",
+      "source_url": "https://iccup.com/upload/images/items/ironwood_branch_zheleznaya_vetv_dota.png",
+      "sha256": "db32145e27049933333233e0e410298da99238900ecfee0fbc38be444337b04a",
+      "bytes": 7163
+    },
+    "Javelin": {
+      "path": "iccup/items/javelin.png",
+      "source_url": "https://iccup.com/upload/images/items/javelin_drotik_dota.png",
+      "sha256": "d2009df470b2ff2725b943d27106d6f240bab8ab1c0dd8ea96c88035c329167c",
+      "bytes": 5204
+    },
+    "Kelens Dagger of Escape": {
+      "path": "iccup/items/kelens_dagger_of_escape.png",
+      "source_url": "https://iccup.com/upload/images/items/kelen_s_dagger_of_escape_kinzhal_spaseniya_dota.png",
+      "sha256": "381df6aa208700f2c0bf382ad32f6eafa96b6fa0575f6b16fd64cfa1b4a040b6",
+      "bytes": 7476
+    },
+    "Khadgars Pipe of Insight": {
+      "path": "iccup/items/khadgars_pipe_of_insight.png",
+      "source_url": "https://iccup.com/upload/images/items/khadgar_s_pipe_of_insight_trubka_prosvetleniya_dota.png",
+      "sha256": "c620b2d4604ad94d505ff8b593937e203cf224d91c46c4799a806970b3da9009",
+      "bytes": 6770
+    },
+    "Linkens Sphere": {
+      "path": "iccup/items/linkens_sphere.png",
+      "source_url": "https://iccup.com/upload/images/items/linken_s_sphere_linkin_dota.png",
+      "sha256": "5c4ae1238511fc442d69324c770279df421dc8462d9014df29a478d158c19954",
+      "bytes": 7534
+    },
+    "Lothars Edge": {
+      "path": "iccup/items/lothars_edge.png",
+      "source_url": "https://iccup.com/upload/images/items/lothar_s_edge_lezvie_lotara_dota.png",
+      "sha256": "ce3074a9440c5218f4ded962a16df2a667f3b721ce62edc1a4d51d38fb3593dd",
+      "bytes": 5269
+    },
+    "Lotus Orb": {
+      "path": "iccup/items/lotus_orb.png",
+      "source_url": "https://iccup.com/upload/images/items/ukku.png",
+      "sha256": "fac466436aa8f999bd461e5d933877c184160904604649c64a1909781f0ab757",
+      "bytes": 6355
+    },
+    "Maelstrom": {
+      "path": "iccup/items/maelstrom.png",
+      "source_url": "https://iccup.com/upload/images/items/maelstrom_vihr_dota.png",
+      "sha256": "b57e0b0f39dd8c629f2f85aa523d186ec976b3fae708dbea2650012fe8d8b7be",
+      "bytes": 8239
+    },
+    "Magic Stick": {
+      "path": "iccup/items/magic_stick.png",
+      "source_url": "https://iccup.com/upload/images/items/magic_stick_volshebnaya_palochka_dota.png",
+      "sha256": "0916f62180106ed7cd029f260c370b9b18b476b4f2d6e53516f65182f1ada3cb",
+      "bytes": 7375
+    },
+    "Magic Wand": {
+      "path": "iccup/items/magic_wand.png",
+      "source_url": "https://iccup.com/upload/images/items/magic_wand_volshebnaya_palochka_dota.png",
+      "sha256": "eed55ab1df21a0e3fbf81f365921a925e777cb315e2cae1df39c48b7c6d046b2",
+      "bytes": 7437
+    },
+    "Manta Style": {
+      "path": "iccup/items/manta_style.png",
+      "source_url": "https://iccup.com/upload/images/items/manta_style_manta_dota.png",
+      "sha256": "b5dddd9955d704cf94eb09a7361c466e4d08ba3a68f60d3102f00571a29d6778",
+      "bytes": 6728
+    },
+    "Mantle of Intelligence": {
+      "path": "iccup/items/mantle_of_intelligence.png",
+      "source_url": "https://iccup.com/upload/images/items/mantle_of_intelligence_mantiya_uchenogo_dota.png",
+      "sha256": "897f836ee92d465e1bc06278610e15faa20e44388f8ef968e01aa43c864a5efa",
+      "bytes": 7590
+    },
+    "Mask of Death": {
+      "path": "iccup/items/mask_of_death.png",
+      "source_url": "https://iccup.com/upload/images/items/mask_of_death_maska_smerti_dota.png",
+      "sha256": "cc264582599ef8735a4a2f8e525a12b37d02e96fa7978f10bc79d2ed54eaa548",
+      "bytes": 7547
+    },
+    "Mask of Madness": {
+      "path": "iccup/items/mask_of_madness.png",
+      "source_url": "https://iccup.com/upload/images/items/mask_of_madness_maska_sumasshestviya_dota.png",
+      "sha256": "c74a731fbb1e0537473783d5e602ab5861099bf7d1162382c4370406d8775eb6",
+      "bytes": 7246
+    },
+    "Medallion of Courage": {
+      "path": "iccup/items/medallion_of_courage.png",
+      "source_url": "https://iccup.com/upload/images/items/medallion_of_courage_medalen_hrabrosti_dota.png",
+      "sha256": "3ce512f2c7770dd1961ddde4eb295128a55f4d2343821fb6de3d5c20398b0f04",
+      "bytes": 7795
+    },
+    "Mekansm": {
+      "path": "iccup/items/mekansm.png",
+      "source_url": "https://iccup.com/upload/images/items/mekansm_mekanzm_dota.png",
+      "sha256": "6b0f9a0dd5b49438529b130033e958694dc129612f3b9b43a2682f206415e29e",
+      "bytes": 7954
+    },
+    "Messerschmidts Reaver": {
+      "path": "iccup/items/messerschmidts_reaver.png",
+      "source_url": "https://iccup.com/upload/images/items/messerschmidt_s_reaver_messershmidt_dota.png",
+      "sha256": "de69eb2458c152758443e92df3ef5151f49210a754ecbd85c2ece38d02108969",
+      "bytes": 8008
+    },
+    "Mithril Hammer": {
+      "path": "iccup/items/mithril_hammer.png",
+      "source_url": "https://iccup.com/upload/images/items/mithril_hammer_mitriloviy_molot_dota.png",
+      "sha256": "1b622f796e4eb489dec7bcd8c8ca01d4bd6916cecac7540e0c9edb13d40921e0",
+      "bytes": 5028
+    },
+    "Mjollnir": {
+      "path": "iccup/items/mjollnir.png",
+      "source_url": "https://iccup.com/upload/images/items/mjollnir_melnir_dota.png",
+      "sha256": "d27f869b63c4e02ce8bc45b2c2008148682ef934a89f31857d22851d3271fe59",
+      "bytes": 7220
+    },
+    "Monkey King Bar": {
+      "path": "iccup/items/monkey_king_bar.png",
+      "source_url": "https://iccup.com/upload/images/items/monkey_king_bar_posoh_korolya_obezyan_dota.png",
+      "sha256": "a3c5451c26d23fb1ce48a6aef006afc69078dafc27892aa93eeec3c8586d238d",
+      "bytes": 7508
+    },
+    "Moon Shard": {
+      "path": "iccup/items/moon_shard.png",
+      "source_url": "https://iccup.com/upload/images/items/2444.png",
+      "sha256": "8462464d3eb9f8252ec997720368d8a304f2d07bc14250b34e8d2e904cc2242e",
+      "bytes": 6995
+    },
+    "Mystic Staff": {
+      "path": "iccup/items/mystic_staff.png",
+      "source_url": "https://iccup.com/upload/images/items/mystic_staff_misticheskiy_posoh_dota.png",
+      "sha256": "df6c1222aee5bff46b1161a577aaa8b2038e259c2c5e686e693ed9254761a702",
+      "bytes": 8153
+    },
+    "Nathrezim Buckler": {
+      "path": "iccup/items/nathrezim_buckler.png",
+      "source_url": "https://iccup.com/upload/images/items/netherezim_buckler_shchit_nezerezima_dota.png",
+      "sha256": "36111bbdc590beec97666885130100397eb248903be3fd852af8e80d3387b0d9",
+      "bytes": 7855
+    },
+    "Necronomicon": {
+      "path": "iccup/items/necronomicon.png",
+      "source_url": "https://iccup.com/upload/images/items/necromicon_1_kniga_nekromanta_dota.png",
+      "sha256": "8657f3983d14f0997861b121f0131fbc41f81ec1f043f70f7b1324c686468ab3",
+      "bytes": 8080
+    },
+    "Null Talisman": {
+      "path": "iccup/items/null_talisman.png",
+      "source_url": "https://iccup.com/upload/images/items/null_talisman_null_talisman_dota.png",
+      "sha256": "4dd9062513ee5cda7c7587ada55094c3d124a0f397bbdb99d6a12cc5f75f82f7",
+      "bytes": 8080
+    },
+    "Oblivion Staff": {
+      "path": "iccup/items/oblivion_staff.png",
+      "source_url": "https://iccup.com/upload/images/items/oblivion_staff_posoh_nebrezhnosti_dota.png",
+      "sha256": "6e6d4a0b4e3bd9d01c6eb6410035ebc8c551865e88442ae19fbce0e1a867b3a1",
+      "bytes": 5915
+    },
+    "Observer Wards": {
+      "path": "iccup/items/observer_wards.png",
+      "source_url": "https://iccup.com/upload/images/items/observer_wards_nablyudatel_dota.png",
+      "sha256": "4d8982a7f7b4055ea24b9472a89d66e6f31e8af0c65a46de68e9cfcfaeb0e71a",
+      "bytes": 7025
+    },
+    "Octarine Core": {
+      "path": "iccup/items/octarine_core.png",
+      "source_url": "https://iccup.com/upload/images/items/ivv.png",
+      "sha256": "2922af1e3e6401717069286903609df3c50a773e3370775089cc534438ac8038",
+      "bytes": 6492
+    },
+    "Ogre Axe": {
+      "path": "iccup/items/ogre_axe.png",
+      "source_url": "https://iccup.com/upload/images/items/ogre_axe_topor_ogra_dota.png",
+      "sha256": "2190414a69172d61bef4d42bdb66b07a65c63866baae79588ba0f39603e40edd",
+      "bytes": 8086
+    },
+    "Orb of Venom": {
+      "path": "iccup/items/orb_of_venom.png",
+      "source_url": "https://iccup.com/upload/images/items/orb_of_venom_shar_yada_dota.png",
+      "sha256": "9030f4d769b83c415fd9adbb663172e00da34a599dcafb6cf3e45df434a7a656",
+      "bytes": 7675
+    },
+    "Orchid Malevolence": {
+      "path": "iccup/items/orchid_malevolence.png",
+      "source_url": "https://iccup.com/upload/images/items/orchid_malevolence_orhideya_zloradstva_dota.png",
+      "sha256": "9df19be33b02c828a1f62a0ad3edb09d5ebd481bb52c599130fefd48f8d05485",
+      "bytes": 8135
+    },
+    "Perseverance": {
+      "path": "iccup/items/perseverance.png",
+      "source_url": "https://iccup.com/upload/images/items/perseverance_sokrovishche_dota.png",
+      "sha256": "4483544d94293887900630cde56e8a64bc2eb76073bd873f1ed839da95eafcf4",
+      "bytes": 7128
+    },
+    "Phase Boots": {
+      "path": "iccup/items/phase_boots.png",
+      "source_url": "https://iccup.com/upload/images/items/phase_boots_botinki_fazi_dota.png",
+      "sha256": "9ebf5b7d9147e630a99586f26fabe7e6742c94efdddf90cec8ca78d7bbbcb980",
+      "bytes": 6271
+    },
+    "Planeswalkers Cloak": {
+      "path": "iccup/items/planeswalkers_cloak.png",
+      "source_url": "https://iccup.com/upload/images/items/planeswalker_s_cloak_klobuk_maga_dota.png",
+      "sha256": "72e03d2859f7ec31cf2ddc0fa8e3ee2162e4a988de3f32caf8192d2d9e3ae2c4",
+      "bytes": 7035
+    },
+    "Plate Mail": {
+      "path": "iccup/items/plate_mail.png",
+      "source_url": "https://iccup.com/upload/images/items/plate_mail_dospehi_dota.png",
+      "sha256": "2a5032329c58b17aa98b668aff3a762d0925d0a93b7216dd0fc087e2a450a8f6",
+      "bytes": 7710
+    },
+    "Point Booster": {
+      "path": "iccup/items/point_booster.png",
+      "source_url": "https://iccup.com/upload/images/items/point_booster_point_buster_dota.png",
+      "sha256": "ea21a7dabd5a9ac5fc7d974f060e949e502be048efb14eb90c7d8d41a7ef53c0",
+      "bytes": 7524
+    },
+    "Poor Mans Shield": {
+      "path": "iccup/items/poor_mans_shield.png",
+      "source_url": "https://iccup.com/upload/images/items/poor_man_s_shield_shchit_bednyaka_dota.png",
+      "sha256": "fd6679ca658450e05c8da3b2e35f4e477393c01a12ae21c59b5e0ec394bae30e",
+      "bytes": 8337
+    },
+    "Power Treads": {
+      "path": "iccup/items/power_treads.png",
+      "source_url": "https://iccup.com/upload/images/items/power_threads_strength_moshch_shagov_kostil_dota.png",
+      "sha256": "d8da8476fb716901cb0c56cfb19c3f5c4bff3307cd4c682b1e3168a54bbf0381",
+      "bytes": 5899
+    },
+    "Quarterstaff": {
+      "path": "iccup/items/quarterstaff.png",
+      "source_url": "https://iccup.com/upload/images/items/quarterstaff_dubina_dota.png",
+      "sha256": "92c991e8803d455ace982e0b1c90362116eabeba14ae3527b71e98f5418401f5",
+      "bytes": 5918
+    },
+    "Quelling Blade": {
+      "path": "iccup/items/quelling_blade.png",
+      "source_url": "https://iccup.com/upload/images/items/quelling_blade_podavlyayushchee_lezvie_dota.png",
+      "sha256": "1e11fd0666de9d6f0bbaf93520e7c1e49f2bc4d9c962f3f03500ba311789d167",
+      "bytes": 7584
+    },
+    "Radiance": {
+      "path": "iccup/items/radiance.png",
+      "source_url": "https://iccup.com/upload/images/items/radiance_radians_dota.png",
+      "sha256": "80c4128671d19754650873e68fb58147e60fa6a02211c63d45bf513c2cd2f9c2",
+      "bytes": 7875
+    },
+    "Refresher Orb": {
+      "path": "iccup/items/refresher_orb.png",
+      "source_url": "https://iccup.com/upload/images/items/refresher_orb_shar_osvezheniya_dota.png",
+      "sha256": "4f1d7719bd9918e1875337a9d42fabf42667964b8c0e847935121d3bae52ff92",
+      "bytes": 7837
+    },
+    "Ring of Aquila": {
+      "path": "iccup/items/ring_of_aquila.png",
+      "source_url": "https://iccup.com/upload/images/items/ring_of_aquila_koltso_orla_dota.png",
+      "sha256": "2163c81b568ff024e871a76f81d3358a899133d0ae29b449262f03e1f568ef42",
+      "bytes": 6412
+    },
+    "Ring of Basilius": {
+      "path": "iccup/items/ring_of_basilius.png",
+      "source_url": "https://iccup.com/upload/images/items/ring_of_basilius_koltso_baziliusa_dota.png",
+      "sha256": "133ca98671534195b45eb52fa8dba55ae6e1ea96b88f9d4067da947cdd6aa1c4",
+      "bytes": 6658
+    },
+    "Ring of Health": {
+      "path": "iccup/items/ring_of_health.png",
+      "source_url": "https://iccup.com/upload/images/items/ring_of_health_koltso_zdorovya_dota.png",
+      "sha256": "2c8762cd5362c1a3d93040c3048389255e2f5bcaa0857dab4ccac3670a774bc8",
+      "bytes": 7115
+    },
+    "Ring of Protection": {
+      "path": "iccup/items/ring_of_protection.png",
+      "source_url": "https://iccup.com/upload/images/items/ring_of_protection_koltso_zashchiti_dota.png",
+      "sha256": "ec9f772e7b05a8dadcb92b937a3a1a0464d944187fbfe8162fe96c1f29845f95",
+      "bytes": 6443
+    },
+    "Ring of Regeneration": {
+      "path": "iccup/items/ring_of_regeneration.png",
+      "source_url": "https://iccup.com/upload/images/items/ring_of_regeneration_koltso_regeneratsii_dota.png",
+      "sha256": "06406656bd4141adf8972b01577a9053ad18d2c6042770b86a142054fddbf841",
+      "bytes": 6510
+    },
+    "Robe of the Magi": {
+      "path": "iccup/items/robe_of_the_magi.png",
+      "source_url": "https://iccup.com/upload/images/items/robe_of_the_magi_mantiya_maga_dota.png",
+      "sha256": "fb142bd60ad854a17404aee50d4cb41b8715d7d6f3dc161fd3c3550f80830551",
+      "bytes": 8030
+    },
+    "Rod of Atos": {
+      "path": "iccup/items/rod_of_atos.png",
+      "source_url": "https://iccup.com/upload/images/items/rod_of_atos_zhezl_atosa_dota.png",
+      "sha256": "b1afbb6d1f3c2b83155ce22ef68f51effa7372be4e36974edffcae31c15a3878",
+      "bytes": 8267
+    },
+    "Sacred Relic": {
+      "path": "iccup/items/sacred_relic.png",
+      "source_url": "https://iccup.com/upload/images/items/sacred_relic_svyashchennaya_relikviya_dota.png",
+      "sha256": "120f9600bfceef2f02d2872ccc7e869c0cccccc8110210c216d91f276bd1d7e5",
+      "bytes": 7946
+    },
+    "Sange": {
+      "path": "iccup/items/sange.png",
+      "source_url": "https://iccup.com/upload/images/items/sange_sendzh_dota.png",
+      "sha256": "916cb4d1f6f645656ec0bdeb0b29a29e77c46857e786ef3f96e2309e86a027dc",
+      "bytes": 7977
+    },
+    "Sange and Yasha": {
+      "path": "iccup/items/sange_and_yasha.png",
+      "source_url": "https://iccup.com/upload/images/items/sange_yasha_sendzh_i_yasha_dota.png",
+      "sha256": "12d9c7173796b2f5b95e543b9af8d1e24768376cc1ba51cc96d9883fe049c945",
+      "bytes": 8193
+    },
+    "Satanic": {
+      "path": "iccup/items/satanic.png",
+      "source_url": "https://iccup.com/upload/images/items/satanic_satanik_dota.png",
+      "sha256": "40400a3fd8b81477e9352e8f181df73454876fb5e25817d887d670267178ba66",
+      "bytes": 6869
+    },
+    "Scroll of Town Portal": {
+      "path": "iccup/items/scroll_of_town_portal.png",
+      "source_url": "https://iccup.com/upload/images/items/scroll_of_town_portal_teleport_dota.png",
+      "sha256": "94884ef19813783d3a2816157eb2c3ef2ab6ead827ded2b415d22d4a2eff2f73",
+      "bytes": 7517
+    },
+    "Sentry Wards": {
+      "path": "iccup/items/sentry_wards.png",
+      "source_url": "https://iccup.com/upload/images/items/sentry_wards_karaul_dota.png",
+      "sha256": "663bbac12afd6d158a84b76a2180a92033df3aa679bed44c90b6d4415f401618",
+      "bytes": 6619
+    },
+    "Shadow Amulet": {
+      "path": "iccup/items/shadow_amulet.png",
+      "source_url": "https://iccup.com/upload/images/items/shadow_amulet_amulet_nevidimosti_dota.png",
+      "sha256": "6ca6460e69389628e7b662e2dfaaa1d6186c41d8fbd82e1a3f1cb929c48e2064",
+      "bytes": 7334
+    },
+    "Shivas Guard": {
+      "path": "iccup/items/shivas_guard.png",
+      "source_url": "https://iccup.com/upload/images/items/shiva_s_guard_zashchita_shivi_dota.png",
+      "sha256": "5f3ebbe6e1f1399eda5b8b3e0f916abb771ee846bcd70705b22c995e0271da91",
+      "bytes": 7673
+    },
+    "Silver Edge": {
+      "path": "iccup/items/silver_edge.png",
+      "source_url": "https://iccup.com/upload/images/items/tskk.png",
+      "sha256": "9822303b171001296f4061270d157ea7c7717285ec1645ce19eb3093e405d9d5",
+      "bytes": 5558
+    },
+    "Slippers of Agility": {
+      "path": "iccup/items/slippers_of_agility.png",
+      "source_url": "https://iccup.com/upload/images/items/slippers_of_agility_tufli_lovkosti_dota.png",
+      "sha256": "36dbedb3e31bf2ffd26e4f6bf50a170a1d0f2c931d1f26925bee800d0d49abfc",
+      "bytes": 6026
+    },
+    "Smoke of Deceit": {
+      "path": "iccup/items/smoke_of_deceit.png",
+      "source_url": "https://iccup.com/upload/images/items/smoke_of_deceit_dim_obmana_dota.png",
+      "sha256": "04d389caa978481a833b074f0fd69e3e8ce02fb8f6442312366d12af2ec8c0bb",
+      "bytes": 5498
+    },
+    "Sobi Mask": {
+      "path": "iccup/items/sobi_mask.png",
+      "source_url": "https://iccup.com/upload/images/items/sobi_mask_maska_sobi_dota.png",
+      "sha256": "e23fbf856f87e78d728972db9cb16d88d1849283821bc512af0387e41ad806ce",
+      "bytes": 7821
+    },
+    "Solar Crest": {
+      "path": "iccup/items/solar_crest.png",
+      "source_url": "https://iccup.com/upload/images/items/tsuu.png",
+      "sha256": "c5b29558b475f927abded455cfcd40fb1382ea0a01bd73185aa15a62c3af0c99",
+      "bytes": 6144
+    },
+    "Soul Booster": {
+      "path": "iccup/items/soul_booster.png",
+      "source_url": "https://iccup.com/upload/images/items/soul_buster_buster_serdtsa_dota.png",
+      "sha256": "5ad9686f9e4de16c53c2ebae72aec8286621105f0ff07c4c74a92e94f2315e59",
+      "bytes": 7476
+    },
+    "Soul Ring": {
+      "path": "iccup/items/soul_ring.png",
+      "source_url": "https://iccup.com/upload/images/items/soul_ring_koltso_dushi_dota.png",
+      "sha256": "3309af5485d3995f996a2b3e7a1a18ab46dd485ff0b4965f33af3dc393f677bc",
+      "bytes": 8579
+    },
+    "Staff of Wizardry": {
+      "path": "iccup/items/staff_of_wizardry.png",
+      "source_url": "https://iccup.com/upload/images/items/staff_of_wizardry_posoh_volshebstva_dota.png",
+      "sha256": "3714c5183cd9b937da7ffedf94b6d6883d8ac099186eac6f79001b99f60a4413",
+      "bytes": 8306
+    },
+    "Stout Shield": {
+      "path": "iccup/items/stout_shield.png",
+      "source_url": "https://iccup.com/upload/images/items/stout_shield_krepkaya_bronya_dota.png",
+      "sha256": "5e60bde078aeec20429987461ad87a2266f8c2ae1a6e45ffa81be4d0530c9213",
+      "bytes": 6502
+    },
+    "Stygian Desolator": {
+      "path": "iccup/items/stygian_desolator.png",
+      "source_url": "https://iccup.com/upload/images/items/stygian_desolator_stigian_desolyator_dota.png",
+      "sha256": "85d9e2fb3ca11cb69693027eef5d5576f06b9be6fcc0b156fa4c2a0a1454285c",
+      "bytes": 7493
+    },
+    "Talisman of Evasion": {
+      "path": "iccup/items/talisman_of_evasion.png",
+      "source_url": "https://iccup.com/upload/images/items/talisman_of_evasion_talisman_ukloneniya_dota.png",
+      "sha256": "f75f694d6dbd9586e6820e7369111619687308eb358dbffcef9f1e88c8b19391",
+      "bytes": 7356
+    },
+    "The Butterfly": {
+      "path": "iccup/items/the_butterfly.png",
+      "source_url": "https://iccup.com/upload/images/items/the_butterfly_babochka_dota.png",
+      "sha256": "b8d70d233316493fbb36c209c442a1fd105063234fbfaf323c5cc506de721129",
+      "bytes": 6995
+    },
+    "Tranquil Boots": {
+      "path": "iccup/items/tranquil_boots.png",
+      "source_url": "https://iccup.com/upload/images/items/tranquil_boots_tihie_sapogi_dota.png",
+      "sha256": "330ac8781e980eaea12aeb772282ebbbb305e9b40c27b5c057130735b716fccc",
+      "bytes": 7105
+    },
+    "Ultimate Orb": {
+      "path": "iccup/items/ultimate_orb.png",
+      "source_url": "https://iccup.com/upload/images/items/ultimate_orb_ult_shar_dota.png",
+      "sha256": "861239384e72f62baf147d3312f45a781d0d493c98f0f8294b2aaea61f4402cd",
+      "bytes": 7181
+    },
+    "Recipe Scroll": {
+      "path": "iccup/items/recipe_scroll.gif",
+      "source_url": "https://cdn.w3dota.com/items/BTNSnazzyScroll.gif",
+      "sha256": "cbd2b8af8d3689b5ffdd15b1e65c8b7b53784f905ed35504e840bead026aaec7",
+      "bytes": 5706
+    },
+    "Urn of Shadows": {
+      "path": "iccup/items/urn_of_shadows.png",
+      "source_url": "https://iccup.com/upload/images/items/urn_of_shadows_urna_teney_dota.png",
+      "sha256": "03443400ec803af9348b1878e37c247dc12868b8f060be63d4a69ff541b5a13b",
+      "bytes": 7759
+    },
+    "Vanguard": {
+      "path": "iccup/items/vanguard.png",
+      "source_url": "https://iccup.com/upload/images/items/vanguard_shchit_avangarda_dota.png",
+      "sha256": "57a392ea7b997ee9ec4b8e373841f53e340d85782e986c33c16de4288fcf22e8",
+      "bytes": 8068
+    },
+    "Veil of Discord": {
+      "path": "iccup/items/veil_of_discord.png",
+      "source_url": "https://iccup.com/upload/images/items/veil_of_discord_zavesa_raznoglasiya_dota.png",
+      "sha256": "eb83450a806b025c5d18d128658cdf51f05e2c20c880743a99656d649f88a9d3",
+      "bytes": 7612
+    },
+    "Vitality Booster": {
+      "path": "iccup/items/vitality_booster.png",
+      "source_url": "https://iccup.com/upload/images/items/vitality_booster_buster_zhizni_dota.png",
+      "sha256": "68342876cef3c95b4c4223fbd6646e3e2208bb4e87c68b1727861397567a82e3",
+      "bytes": 6918
+    },
+    "Vladimirs Offering": {
+      "path": "iccup/items/vladimirs_offering.png",
+      "source_url": "https://iccup.com/upload/images/items/vladimir_s_offering_podarok_vlada_dota.png",
+      "sha256": "51957ee3f182427bd5f7371f7c54577dac643ff445ad0d7970dd7d5b040977bd",
+      "bytes": 7679
+    },
+    "Void Stone": {
+      "path": "iccup/items/void_stone.png",
+      "source_url": "https://iccup.com/upload/images/items/void_stone_kamen_pustoti_dota.png",
+      "sha256": "a48803adda150b9462be8c2ff59d91a645438212294eb7beef6fdc3ccd5b202d",
+      "bytes": 8041
+    },
+    "Wraith Band": {
+      "path": "iccup/items/wraith_band.png",
+      "source_url": "https://iccup.com/upload/images/items/wraith_band_maska_duha_dota.png",
+      "sha256": "4a65488b5e6ad80018d7154980ee145b48887aa009c0ec457326c6ca3fbab381",
+      "bytes": 7421
+    },
+    "Yasha": {
+      "path": "iccup/items/yasha.png",
+      "source_url": "https://iccup.com/upload/images/items/yasha_yasha_dota.png",
+      "sha256": "53c171df0c54608cde51cf419de18298d516197cdc70ce84c2a0e1134a97a19a",
+      "bytes": 6186
+    }
+  }
+}
