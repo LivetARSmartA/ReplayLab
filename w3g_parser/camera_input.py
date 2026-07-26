@@ -5,7 +5,7 @@ import threading
 from ctypes import wintypes
 from typing import Callable
 from .seeker import SeekBackendError
-CAMERA_CONTROL_KEYS = frozenset({33, 34, 35, 36, 37, 38, 39, 40, 45, 46, 96, 97})
+CAMERA_CONTROL_KEYS = frozenset({33, 34, 35, 36, 37, 38, 39, 40, 45, 46})
 KEY_CHOICES = tuple(((f'F{number}', 111 + number) for number in range(1, 13))) + tuple(((str(number), 48 + number) for number in range(10))) + tuple(((letter, ord(letter)) for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')) + tuple(((f'Num {number}', 96 + number) for number in range(10))) + (('Num *', 106), ('Num +', 107), ('Num -', 109), ('Num .', 110), ('Num /', 111), ('Space', 32), ('Tab', 9), ('Enter', 13), ('Backspace', 8), ('Esc', 27), ('Insert', 45), ('Delete', 46), ('Home', 36), ('End', 35), ('Page Up', 33), ('Page Down', 34), ('←', 37), ('↑', 38), ('→', 39), ('↓', 40), ('Left Shift', 160), ('Right Shift', 161), ('Left Ctrl', 162), ('Right Ctrl', 163), ('Left Alt', 164), ('Right Alt', 165), (';', 186), ('=', 187), (',', 188), ('-', 189), ('.', 190), ('/', 191), ('`', 192), ('[', 219), ('\\', 220), (']', 221), ("'", 222))
 
 class KBDLLHOOKSTRUCT(ctypes.Structure):
@@ -29,6 +29,7 @@ class CameraInputRouter:
             raise SeekBackendError('Camera input router requires Windows')
         self._on_action = on_action
         self._bindings: dict[int, str] = {}
+        self._action_keys: dict[str, int] = {}
         self._camera_process_id: int | None = None
         self._pressed: set[int] = set()
         self._macro_down: set[int] = set()
@@ -75,6 +76,7 @@ class CameraInputRouter:
             raise ValueError('Одна клавиша не может запускать два макроса')
         with self._lock:
             self._bindings = {int(key): str(action) for action, key in bindings.items()}
+            self._action_keys = {str(action): int(key) for action, key in bindings.items()}
             self._pressed.clear()
             self._macro_down.clear()
 
@@ -93,6 +95,11 @@ class CameraInputRouter:
     def is_pressed(self, virtual_key: int) -> bool:
         with self._lock:
             return virtual_key in self._pressed
+
+    def is_action_pressed(self, action: str) -> bool:
+        with self._lock:
+            key = self._action_keys.get(action)
+            return key is not None and key in self._macro_down
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():

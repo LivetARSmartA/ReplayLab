@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from .seeker import CameraRuntimeSession, CameraState, SeekBackendError
 HOST_MAGIC = 1296256082
-HOST_PROTOCOL_VERSION = 4
+HOST_PROTOCOL_VERSION = 6
 HOST_CONFIGURE = 1
 HOST_SET_TARGET = 2
 HOST_BEGIN_TRANSITION = 3
@@ -16,6 +16,11 @@ HOST_UPDATE_SUBJECT = 4
 HOST_PING = 5
 HOST_SHUTDOWN = 6
 HOST_SYNC_POSE = 7
+HOST_CONFIGURE_DRONE = 8
+HOST_ENTER_DRONE = 9
+HOST_SET_DRONE_INPUT = 10
+HOST_EXIT_DRONE = 11
+HOST_TURN_DRONE_AROUND = 12
 HOST_HEADER = struct.Struct('<IHHII')
 HOST_RESPONSE = struct.Struct('<II7dQQQQII')
 HOST_CONFIG = struct.Struct('<II7I10d')
@@ -23,6 +28,8 @@ HOST_TARGET = struct.Struct('<8d')
 HOST_POSE = struct.Struct('<7d')
 HOST_TRANSITION = struct.Struct('<7d')
 HOST_SUBJECT = struct.Struct('<2d')
+HOST_DRONE_SETTINGS = struct.Struct('<13d')
+HOST_DRONE_INPUT = struct.Struct('<10dI')
 HOST_STATUS = {1: 'Native Camera Host отклонил IPC-команду', 2: 'Native Camera Host находится в неподходящем состоянии', 3: 'Native Camera Host не смог открыть процесс Warcraft', 4: 'Native Camera Host не смог прочитать камеру Warcraft', 5: 'Native Camera Host не смог записать состояние камеры Warcraft', 6: 'Native Camera Host обнаружил небезопасное состояние камеры', 7: 'Native Camera Host отклонил небезопасную команду движения', 8: 'Windows не предоставила высокоточный таймер для Camera Engine', 9: 'Warcraft III был закрыт — Camera Engine остановлен', 10: 'Native Camera Host не успевает принимать команды камеры'}
 
 def select_camera_update_hz(max_fps: object, refresh_rate: object, *, default: int=120) -> int:
@@ -66,6 +73,36 @@ class CameraSafetyLimits:
     pitch_max: float
     z_offset_min: float
     z_offset_max: float
+
+@dataclass(frozen=True)
+class DroneSettings:
+    move_speed: float = 55.0
+    lift_speed: float = 1400.0
+    dolly_speed: float = 1800.0
+    yaw_speed: float = 0.9
+    pitch_speed: float = 0.65
+    acceleration_response: float = 3.5
+    braking_response: float = 6.0
+    follow_response: float = 8.0
+    bank_angle: float = 0.08
+    bank_response: float = 5.0
+    prediction_seconds: float = 0.05
+    wobble_position: float = 0.0
+    wobble_roll: float = 0.0
+
+@dataclass(frozen=True)
+class DroneInput:
+    forward: float = 0.0
+    strafe: float = 0.0
+    lift: float = 0.0
+    yaw: float = 0.0
+    pitch: float = 0.0
+    dolly: float = 0.0
+    subject_x: float = 0.0
+    subject_y: float = 0.0
+    subject_velocity_x: float = 0.0
+    subject_velocity_y: float = 0.0
+    target_lock: bool = False
 
 @dataclass(frozen=True)
 class NativeCameraMetrics:
@@ -186,6 +223,21 @@ class NativeCameraHost:
 
     def update_subject(self, x: float, y: float) -> CameraState:
         return self._exchange(HOST_UPDATE_SUBJECT, HOST_SUBJECT.pack(x, y))
+
+    def configure_drone(self, settings: DroneSettings) -> CameraState:
+        return self._exchange(HOST_CONFIGURE_DRONE, HOST_DRONE_SETTINGS.pack(settings.move_speed, settings.lift_speed, settings.dolly_speed, settings.yaw_speed, settings.pitch_speed, settings.acceleration_response, settings.braking_response, settings.follow_response, settings.bank_angle, settings.bank_response, settings.prediction_seconds, settings.wobble_position, settings.wobble_roll))
+
+    def enter_drone(self, state: CameraState) -> CameraState:
+        return self._exchange(HOST_ENTER_DRONE, HOST_POSE.pack(*self._pose_values(state)))
+
+    def set_drone_input(self, value: DroneInput) -> CameraState:
+        return self._exchange(HOST_SET_DRONE_INPUT, HOST_DRONE_INPUT.pack(value.forward, value.strafe, value.lift, value.yaw, value.pitch, value.dolly, value.subject_x, value.subject_y, value.subject_velocity_x, value.subject_velocity_y, int(value.target_lock)))
+
+    def exit_drone(self) -> CameraState:
+        return self._exchange(HOST_EXIT_DRONE)
+
+    def turn_drone_around(self) -> CameraState:
+        return self._exchange(HOST_TURN_DRONE_AROUND)
 
     def ping(self) -> CameraState:
         return self._exchange(HOST_PING)
