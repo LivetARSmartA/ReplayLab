@@ -1,14 +1,15 @@
 from __future__ import annotations
 import os
+import math
 import struct
 import subprocess
-import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from .native_runtime import native_binary_candidates
 from .seeker import CameraRuntimeSession, CameraState, SeekBackendError
 HOST_MAGIC = 1296256082
-HOST_PROTOCOL_VERSION = 6
+HOST_PROTOCOL_VERSION = 7
 HOST_CONFIGURE = 1
 HOST_SET_TARGET = 2
 HOST_BEGIN_TRANSITION = 3
@@ -20,7 +21,7 @@ HOST_CONFIGURE_DRONE = 8
 HOST_ENTER_DRONE = 9
 HOST_SET_DRONE_INPUT = 10
 HOST_EXIT_DRONE = 11
-HOST_TURN_DRONE_AROUND = 12
+HOST_TURN_DRONE = 12
 HOST_HEADER = struct.Struct('<IHHII')
 HOST_RESPONSE = struct.Struct('<II7dQQQQII')
 HOST_CONFIG = struct.Struct('<II7I10d')
@@ -30,6 +31,7 @@ HOST_TRANSITION = struct.Struct('<7d')
 HOST_SUBJECT = struct.Struct('<2d')
 HOST_DRONE_SETTINGS = struct.Struct('<13d')
 HOST_DRONE_INPUT = struct.Struct('<10dI')
+HOST_DRONE_TURN = struct.Struct('<d')
 HOST_STATUS = {1: 'Native Camera Host отклонил IPC-команду', 2: 'Native Camera Host находится в неподходящем состоянии', 3: 'Native Camera Host не смог открыть процесс Warcraft', 4: 'Native Camera Host не смог прочитать камеру Warcraft', 5: 'Native Camera Host не смог записать состояние камеры Warcraft', 6: 'Native Camera Host обнаружил небезопасное состояние камеры', 7: 'Native Camera Host отклонил небезопасную команду движения', 8: 'Windows не предоставила высокоточный таймер для Camera Engine', 9: 'Warcraft III был закрыт — Camera Engine остановлен', 10: 'Native Camera Host не успевает принимать команды камеры'}
 
 def select_camera_update_hz(max_fps: object, refresh_rate: object, *, default: int=120) -> int:
@@ -114,25 +116,7 @@ class NativeCameraMetrics:
     max_work_us: int = 0
 
 def _native_host_candidates() -> list[Path]:
-    candidates: list[Path] = []
-    configured = os.environ.get('REPLAYLAB_CAMERA_HOST')
-    if configured:
-        candidates.append(Path(configured))
-    bundle_root = getattr(sys, '_MEIPASS', None)
-    if bundle_root:
-        candidates.append(Path(bundle_root) / 'native' / 'replaylab_camera_host.exe')
-    candidates.append(Path(sys.executable).resolve().parent / '_internal' / 'native' / 'replaylab_camera_host.exe')
-    project_root = Path(__file__).resolve().parents[1]
-    candidates.append(project_root / 'native' / 'replaylab_camera_host.exe')
-    candidates.append(project_root / 'build' / 'native' / 'camera_motion' / 'replaylab_camera_host.exe')
-    unique: list[Path] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        key = str(candidate.resolve()).casefold()
-        if key not in seen:
-            seen.add(key)
-            unique.append(candidate)
-    return unique
+    return native_binary_candidates('replaylab_camera_host.exe', environment_variable='REPLAYLAB_CAMERA_HOST', build_subdirectory='camera_motion')
 
 def find_native_camera_host() -> Path:
     for candidate in _native_host_candidates():
@@ -236,8 +220,10 @@ class NativeCameraHost:
     def exit_drone(self) -> CameraState:
         return self._exchange(HOST_EXIT_DRONE)
 
-    def turn_drone_around(self) -> CameraState:
-        return self._exchange(HOST_TURN_DRONE_AROUND)
+    def turn_drone(self, angle_radians: float) -> CameraState:
+        if not math.isfinite(angle_radians) or abs(angle_radians) > math.tau:
+            raise ValueError('Drone turn angle must be finite and within 360°.')
+        return self._exchange(HOST_TURN_DRONE, HOST_DRONE_TURN.pack(angle_radians))
 
     def ping(self) -> CameraState:
         return self._exchange(HOST_PING)

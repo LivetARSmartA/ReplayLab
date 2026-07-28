@@ -8,20 +8,21 @@ from pathlib import Path
 from typing import Callable
 from PySide6.QtCore import QSettings, QSize, QTimer, Qt, QThreadPool, QRunnable, Signal, QObject
 from PySide6.QtGui import QColor, QCloseEvent, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QApplication, QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget, QListWidgetItem, QLineEdit, QMainWindow, QMessageBox, QPushButton, QSlider, QSplitter, QStyle, QStyleOptionSlider, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget, QListWidgetItem, QLineEdit, QMainWindow, QMessageBox, QPushButton, QSlider, QSpinBox, QSplitter, QStyle, QStyleOptionSlider, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from .assets import app_icon_path, hero_icon_path, item_icon_path, release_build_id
 from .camera import CameraMotionSettings, SmoothCameraController
 from .camera_input import CameraInputRouter, KEY_CHOICES
 from .camera_modes import CAMERA_TRANSITION_PRESETS, DEFAULT_CUSTOM_TRANSITION, CameraTransitionKind, CameraTransitionSpec, tune_transition
-from .item_profile import get_item_definition
 from .launcher import WarcraftLaunchError, WarcraftReplayLauncher, likely_iccup_launchers, likely_warcraft_executables
+from .moments import ReplayMoment, ReplayMomentKind, build_replay_moments
 from .native_camera import DroneSettings
-from .parser import DotaPlayer, ItemTiming, MultiKillEvent, ReplayReport, parse_replay
+from .parser import ChatMessage, DotaPlayer, ItemTiming, ReplayReport, parse_replay
 from .seeker import AttachResult, SEEK_PROFILES, SeekBackendError, SeekCancelled, SeekProfile, SeekProgress, Warcraft126MemoryBackend
 APP_NAME = 'Warcraft III Replay Lab'
 CAMERA_HERO_SLOT_COUNT = 10
 CAMERA_CORE_MACRO_ACTIONS = (('toggle_camera', 'Камера: вкл / выкл', 119), ('follow_toggle', 'Follow: вкл / выкл', 118), ('smart_follow_toggle', 'Smart Follow', 116), ('reset_view', 'Вернуть обзор', 120))
-CAMERA_DRONE_MACRO_ACTIONS = (('drone_toggle', 'Fly Drone: вкл / выкл', 66), ('drone_target_lock', 'Drone: захват цели', 78), ('drone_turn_around', 'Drone: разворот 180°', 101), ('drone_height_up', 'Drone: набрать высоту', 97), ('drone_height_down', 'Drone: сбросить высоту', 96))
+CAMERA_DRONE_MACRO_ACTIONS = (('drone_toggle', 'Fly Drone: вкл / выкл', 66), ('drone_target_lock', 'Drone: захват цели', 78), ('drone_turn_left', 'Drone: поворот влево 90°', 100), ('drone_turn_around', 'Drone: разворот 180°', 101), ('drone_turn_right', 'Drone: поворот вправо 90°', 102), ('drone_height_up', 'Drone: набрать высоту', 97), ('drone_height_down', 'Drone: сбросить высоту', 96))
+DRONE_TURN_DEGREES = {'drone_turn_left': 90.0, 'drone_turn_around': 180.0, 'drone_turn_right': -90.0}
 CAMERA_TRANSITION_ACTIONS = (('transition_dolly_out', 'Dolly Out', 121, CameraTransitionKind.DOLLY_OUT, 'Чистый плавный отъезд назад'), ('transition_crane_up', 'Crane Up', 122, CameraTransitionKind.CRANE_UP, 'Вертикальный операторский подъём'), ('transition_reveal', 'Reveal', 117, CameraTransitionKind.REVEAL, 'Подъём, отдаление и наклон с удержанием героя'), ('transition_push_in', 'Push In', 123, CameraTransitionKind.PUSH_IN, 'Мягкий наезд на текущий кадр'), ('transition_focus_pull', 'Focus Pull', 71, CameraTransitionKind.FOCUS_PULL, 'Отдаление с выбранным героем в центре'), ('transition_custom', 'Свой переход', 84, CameraTransitionKind.CUSTOM, 'Своя дистанция, высота, наклон и длительность'))
 CAMERA_HERO_MACRO_ACTIONS = (('hero_slot_1', 'Герой 1', 49), ('hero_slot_2', 'Герой 2', 50), ('hero_slot_3', 'Герой 3', 51), ('hero_slot_4', 'Герой 4', 52), ('hero_slot_5', 'Герой 5', 53), ('hero_slot_6', 'Герой 6', 54), ('hero_slot_7', 'Герой 7', 55), ('hero_slot_8', 'Герой 8', 56), ('hero_slot_9', 'Герой 9', 57), ('hero_slot_10', 'Герой 10', 48))
 CAMERA_MACRO_ACTIONS = CAMERA_CORE_MACRO_ACTIONS + CAMERA_DRONE_MACRO_ACTIONS + tuple(((action, label, default_key) for action, label, default_key, _, _ in CAMERA_TRANSITION_ACTIONS)) + CAMERA_HERO_MACRO_ACTIONS
@@ -43,6 +44,14 @@ def format_time(milliseconds: int | None, *, millis: bool=False) -> str:
     else:
         base = f'{minutes:02d}:{seconds:02d}'
     return f'{base}.{remainder:03d}' if millis else base
+
+def format_relative_time(milliseconds: int) -> str:
+    if milliseconds >= 0:
+        return format_time(milliseconds, millis=True)
+    return '−' + format_time(-milliseconds, millis=True)
+
+def event_seek_target(event_time_ms: int, preroll_seconds: int) -> int:
+    return max(int(event_time_ms) - max(0, min(int(preroll_seconds), 30)) * 1000, 0)
 
 def number(value: int | None) -> str:
     return '—' if value is None else f'{value:,}'.replace(',', ' ')
@@ -124,6 +133,36 @@ class ParseTask(QRunnable):
     def run(self) -> None:
         try:
             self.signals.ready.emit(parse_replay(self.replay_path))
+        except Exception as exc:
+            self.signals.failed.emit(str(exc))
+        finally:
+            self.signals.finished.emit()
+
+class LaunchSignals(QObject):
+    ready = Signal(object)
+    failed = Signal(str)
+    finished = Signal()
+
+class LaunchTask(QRunnable):
+
+    def __init__(self, launcher: WarcraftReplayLauncher, executable: Path, replay_path: Path, iccup_launcher: Path | None, *, replace_running: bool) -> None:
+        super().__init__()
+        self.launcher = launcher
+        self.executable = executable
+        self.replay_path = replay_path
+        self.iccup_launcher = iccup_launcher
+        self.replace_running = replace_running
+        self.signals = LaunchSignals()
+
+    def run(self) -> None:
+        try:
+            if self.iccup_launcher is not None:
+                pid = self.launcher.launch_via_iccup(self.iccup_launcher, self.executable, self.replay_path, replace_running=self.replace_running)
+                result = (pid, self.replay_path, 'через iCCup', True)
+            else:
+                pid = self.launcher.launch(self.executable, self.replay_path, replace_running=self.replace_running)
+                result = (pid, self.replay_path, 'напрямую', False)
+            self.signals.ready.emit(result)
         except Exception as exc:
             self.signals.failed.emit(str(exc))
         finally:
@@ -496,13 +535,13 @@ class CameraService(QObject):
             return
         self.signals.drone_target_lock.emit(active)
 
-    def turn_drone_around(self) -> None:
+    def turn_drone(self, angle_degrees: float) -> None:
         controller = self._controller
         if controller is None or not controller.running:
             self.signals.failed.emit('Сначала включи Camera Engine.')
             return
         try:
-            controller.turn_drone_around()
+            controller.turn_drone(angle_degrees)
         except (SeekBackendError, OSError, ValueError) as exc:
             self.signals.failed.emit(str(exc))
 
@@ -559,14 +598,14 @@ class TimelineSlider(QSlider):
 
     def __init__(self) -> None:
         super().__init__(Qt.Orientation.Horizontal)
-        self._events: list[MultiKillEvent] = []
+        self._events: list[ReplayMoment] = []
         self.setMinimum(0)
         self.setMaximum(1)
         self.setSingleStep(1000)
         self.setPageStep(10000)
         self.setMinimumHeight(46)
 
-    def set_events(self, events: list[MultiKillEvent], duration_game_ms: int) -> None:
+    def set_events(self, events: list[ReplayMoment], duration_game_ms: int) -> None:
         self._events = list(events)
         self.setMaximum(max(duration_game_ms, 1))
         self.update()
@@ -583,8 +622,9 @@ class TimelineSlider(QSlider):
         for moment in self._events:
             ratio = min(max(moment.game_time_ms / self.maximum(), 0), 1)
             x = groove.left() + round(ratio * groove.width())
-            color = QColor('#ff6b57' if moment.count >= 3 else '#55a7ff')
-            painter.setPen(QPen(color, 2))
+            color = QColor('#f2c94c') if moment.kind == ReplayMomentKind.FIRST_BLOOD else QColor('#ff6b57') if moment.severity >= 3 else QColor('#55a7ff') if moment.kind == ReplayMomentKind.MULTI_KILL else QColor('#7f8ea3')
+            width = 3 if moment.kind != ReplayMomentKind.KILL else 1
+            painter.setPen(QPen(color, width))
             painter.drawLine(x, groove.top() - 8, x, groove.bottom() + 8)
 
 class StatCard(QFrame):
@@ -619,8 +659,10 @@ class ReplayLabWindow(QMainWindow):
         self.settings = settings or QSettings('ReplayLab', 'Warcraft3ReplayLab')
         self.report: ReplayReport | None = None
         self.current_path: Path | None = None
+        self._replay_moments: list[ReplayMoment] = []
         self._report_cache: dict[Path, ReplayReport] = {}
         self._parse_task: ParseTask | None = None
+        self._launch_task: LaunchTask | None = None
         self._last_requested_replay_time: int | None = None
         self._pending_backward_seek: int | None = None
         self._pending_backward_profile: SeekProfile | None = None
@@ -711,20 +753,12 @@ class ReplayLabWindow(QMainWindow):
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(10)
-        cards = QHBoxLayout()
-        self.map_card = StatCard('КАРТА')
-        self.duration_card = StatCard('ИГРОВОЕ ВРЕМЯ')
-        self.kills_card = StatCard('УБИЙСТВА')
-        self.moments_card = StatCard('СЕРИИ')
-        for card in (self.map_card, self.duration_card, self.kills_card, self.moments_card):
-            cards.addWidget(card, 1)
-        content_layout.addLayout(cards)
         self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_moments_tab(), 'Просмотр')
+        self.tabs.addTab(self._build_camera_tab(), 'Съёмка')
         self.tabs.addTab(self._build_stats_tab(), 'Статистика')
-        self.tabs.addTab(self._build_moments_tab(), 'Моменты и Seeker')
-        self.tabs.addTab(self._build_camera_tab(), 'Плавная камера')
-        self.tabs.addTab(self._build_items_tab(), 'Предметы')
         content_layout.addWidget(self.tabs, 1)
+        content_layout.addWidget(self._build_transport_bar())
         splitter.addWidget(content)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -743,8 +777,20 @@ class ReplayLabWindow(QMainWindow):
 
     def _build_stats_tab(self) -> QWidget:
         tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(0, 10, 0, 0)
+        outer_layout = QVBoxLayout(tab)
+        outer_layout.setContentsMargins(0, 10, 0, 0)
+        cards = QHBoxLayout()
+        self.map_card = StatCard('КАРТА')
+        self.duration_card = StatCard('ИГРОВОЕ ВРЕМЯ')
+        self.kills_card = StatCard('УБИЙСТВА')
+        self.moments_card = StatCard('СЕРИИ')
+        for card in (self.map_card, self.duration_card, self.kills_card, self.moments_card):
+            cards.addWidget(card, 1)
+        outer_layout.addLayout(cards)
+        self.stats_sections = QTabWidget()
+        players_page = QWidget()
+        layout = QVBoxLayout(players_page)
+        layout.setContentsMargins(0, 8, 0, 0)
         detail = QFrame()
         detail.setObjectName('playerDetail')
         detail_layout = QHBoxLayout(detail)
@@ -794,12 +840,86 @@ class ReplayLabWindow(QMainWindow):
         self.stats_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.stats_table)
         self.stats_table.itemSelectionChanged.connect(self._stats_selection_changed)
+        self.stats_sections.addTab(players_page, 'Игроки')
+        self.stats_sections.addTab(self._build_chat_page(), 'Чат')
+        outer_layout.addWidget(self.stats_sections, 1)
         return tab
+
+    def _build_chat_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 8, 0, 0)
+        controls = QHBoxLayout()
+        self.chat_filter = QComboBox()
+        self.chat_filter.addItem('Матч', 'match')
+        self.chat_filter.addItem('Все сообщения', 'all')
+        self.chat_filter.addItem('До старта', 'pregame')
+        self.chat_filter.addItem('Общий чат', 'all_chat')
+        self.chat_filter.addItem('Союзники', 'allies')
+        self.chat_search = QLineEdit()
+        self.chat_search.setPlaceholderText('Поиск по игроку или сообщению')
+        self.chat_search.setClearButtonEnabled(True)
+        controls.addWidget(QLabel('ПОКАЗАТЬ'))
+        controls.addWidget(self.chat_filter)
+        controls.addWidget(self.chat_search, 1)
+        layout.addLayout(controls)
+        self.chat_table = QTableWidget(0, 4)
+        self.chat_table.setHorizontalHeaderLabels(['Время', 'Канал', 'Игрок', 'Сообщение'])
+        self._configure_table(self.chat_table)
+        self.chat_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.chat_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.chat_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.chat_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.chat_table.verticalHeader().setDefaultSectionSize(36)
+        layout.addWidget(self.chat_table, 1)
+        self.chat_filter.currentIndexChanged.connect(self._refresh_chat)
+        self.chat_search.textChanged.connect(self._refresh_chat)
+        self.chat_table.cellDoubleClicked.connect(self._chat_message_double_clicked)
+        return page
 
     def _build_moments_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(0, 10, 0, 0)
+        controls = QHBoxLayout()
+        self.moment_filter = QComboBox()
+        self.moment_filter.addItem('Все события', 'all')
+        self.moment_filter.addItem('Обычные фраги', 'kills')
+        self.moment_filter.addItem('First Blood и серии', 'highlights')
+        self.seek_preroll = QSpinBox()
+        self.seek_preroll.setRange(0, 30)
+        self.seek_preroll.setSuffix(' сек')
+        self.seek_preroll.setValue(max(0, min(30, int(self.settings.value('seek_preroll_seconds', 10)))))
+        self.seek_preroll.setToolTip('ReplayLab начнёт воспроизведение раньше события, чтобы успеть подготовить кадр.')
+        controls.addWidget(QLabel('СОБЫТИЯ'))
+        controls.addWidget(self.moment_filter)
+        controls.addStretch()
+        controls.addWidget(QLabel('НАЧАТЬ ЗА'))
+        controls.addWidget(self.seek_preroll)
+        layout.addLayout(controls)
+        self.moments_hint = QLabel('Серый — фраг · жёлтый — First Blood · синий/красный — серии.')
+        self.moments_hint.setObjectName('hint')
+        layout.addWidget(self.moments_hint)
+        self.moments_table = QTableWidget(0, 5)
+        self.moments_table.setHorizontalHeaderLabels(['Событие', 'Старт', 'Тип', 'Игрок и герой', 'Жертвы'])
+        self._configure_table(self.moments_table)
+        self.moments_table.setIconSize(QSize(32, 32))
+        self.moments_table.verticalHeader().setDefaultSectionSize(40)
+        for column in (0, 1, 2):
+            self.moments_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        self.moments_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.moments_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.moments_table)
+        self.moment_filter.currentIndexChanged.connect(self._refresh_moments)
+        self.seek_preroll.valueChanged.connect(self._seek_preroll_changed)
+        self.moments_table.cellClicked.connect(self._moment_clicked)
+        return tab
+
+    def _build_transport_bar(self) -> QWidget:
+        transport = QFrame()
+        transport.setObjectName('playerDetail')
+        layout = QVBoxLayout(transport)
+        layout.setContentsMargins(12, 8, 12, 8)
         seeker_bar = QHBoxLayout()
         self.attach_button = QPushButton('Подключиться к Warcraft')
         self.seek_button = QPushButton('Перейти к таймингу')
@@ -836,48 +956,15 @@ class ReplayLabWindow(QMainWindow):
         time_bar.addWidget(self.timeline, 1)
         time_bar.addWidget(self.end_label)
         layout.addLayout(time_bar)
-        self.seek_status = QLabel('Синий штрих — Double Kill, красный — Triple/Ultra/Rampage.')
+        self.seek_status = QLabel('Выбери событие или введи точный тайминг.')
         self.seek_status.setObjectName('hint')
         layout.addWidget(self.seek_status)
-        self.moments_table = QTableWidget(0, 4)
-        self.moments_table.setHorizontalHeaderLabels(['Время', 'Событие', 'Игрок и герой', 'Жертвы'])
-        self._configure_table(self.moments_table)
-        self.moments_table.setIconSize(QSize(32, 32))
-        self.moments_table.verticalHeader().setDefaultSectionSize(40)
-        self.moments_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.moments_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.moments_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.moments_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(self.moments_table)
         self.attach_button.clicked.connect(self.seeker.attach_to_warcraft)
         self.seek_button.clicked.connect(self.seek_to_target)
         self.cancel_button.clicked.connect(self.seeker.cancel)
         self.timeline.valueChanged.connect(lambda value: self.time_input.setText(format_time(value)))
         self.time_input.returnPressed.connect(self._time_input_submitted)
-        self.moments_table.cellClicked.connect(self._moment_clicked)
-        return tab
-
-    def _build_items_tab(self) -> QWidget:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(0, 10, 0, 0)
-        self.item_timings_visible = not RELEASE_BUILD
-        headers = ['Игрок', 'Предмет', 'Стоимость']
-        if self.item_timings_visible:
-            headers.append('Тайминг')
-        self.items_table = QTableWidget(0, len(headers))
-        self.items_table.setHorizontalHeaderLabels(headers)
-        self._configure_table(self.items_table)
-        self.items_table.setIconSize(QSize(32, 32))
-        self.items_table.verticalHeader().setDefaultSectionSize(40)
-        self.items_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.items_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for column in range(2, len(headers)):
-            self.items_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-        if self.item_timings_visible:
-            self.items_table.cellDoubleClicked.connect(self._item_timing_double_clicked)
-        layout.addWidget(self.items_table)
-        return tab
+        return transport
 
     def _setup_camera_macro_combo(self, combo: QComboBox, action: str, default_key: int) -> None:
         for label, virtual_key in KEY_CHOICES:
@@ -944,12 +1031,9 @@ class ReplayLabWindow(QMainWindow):
         return CameraMotionSettings(move_speed=widgets['move_speed'].value(), rotation_speed=math.radians(widgets['rotation_degrees'].value()), zoom_speed=widgets['zoom_speed'].value(), lift_speed=widgets['lift_speed'].value(), smoothing=widgets['smoothing'].value(), follow_smoothing=widgets['follow_smoothing'].value())
 
     def _persist_camera_tuning(self, settings: CameraMotionSettings) -> None:
-        self.settings.setValue('camera_motion/move_speed', settings.move_speed)
-        self.settings.setValue('camera_motion/rotation_speed', settings.rotation_speed)
-        self.settings.setValue('camera_motion/zoom_speed', settings.zoom_speed)
-        self.settings.setValue('camera_motion/lift_speed', settings.lift_speed)
-        self.settings.setValue('camera_motion/smoothing', settings.smoothing)
-        self.settings.setValue('camera_motion/follow_smoothing', settings.follow_smoothing)
+        names = ('move_speed', 'rotation_speed', 'zoom_speed', 'lift_speed', 'smoothing', 'follow_smoothing')
+        for name in names:
+            self.settings.setValue(f'camera_motion/{name}', getattr(settings, name))
 
     def _set_camera_tuning_values(self, values: tuple[float, float, float, float, float, float]) -> None:
         self._camera_tuning_sync = True
@@ -1043,14 +1127,8 @@ class ReplayLabWindow(QMainWindow):
 
     def _custom_transition_spec(self) -> CameraTransitionSpec:
 
-        def stored_float(name: str, default: float) -> float:
-            try:
-                return float(self.settings.value(f'camera_transition/{name}', default))
-            except (TypeError, ValueError):
-                return default
-
         def bounded_float(name: str, default: float, minimum: float, maximum: float) -> float:
-            return min(max(stored_float(name, default), minimum), maximum)
+            return self._stored_float(f'camera_transition/{name}', default, minimum, maximum)
         track_value = self.settings.value('camera_transition/track_selected', DEFAULT_CUSTOM_TRANSITION.track_selected)
         track_selected = track_value if isinstance(track_value, bool) else str(track_value).casefold() in {'1', 'true', 'yes'}
         return CameraTransitionSpec(distance_delta=bounded_float('distance_delta', DEFAULT_CUSTOM_TRANSITION.distance_delta, -2000.0, 2000.0), pitch_delta=math.radians(bounded_float('pitch_degrees', math.degrees(DEFAULT_CUSTOM_TRANSITION.pitch_delta), -25.0, 25.0)), z_offset_delta=bounded_float('z_offset_delta', DEFAULT_CUSTOM_TRANSITION.z_offset_delta, -500.0, 500.0), duration_seconds=bounded_float('duration_seconds', DEFAULT_CUSTOM_TRANSITION.duration_seconds, 0.3, 10.0), target_response=4.5 if track_selected else 0.0, track_selected=track_selected)
@@ -1347,30 +1425,46 @@ class ReplayLabWindow(QMainWindow):
         drone_actions_layout.setVerticalSpacing(8)
         self.camera_drone_button = QPushButton('Включить Fly Drone')
         self.camera_drone_lock_button = QPushButton('Захватить героя')
+        self.camera_drone_turn_left_button = QPushButton('Повернуть влево на 90°')
         self.camera_drone_turn_button = QPushButton('Развернуться на 180°')
+        self.camera_drone_turn_right_button = QPushButton('Повернуть вправо на 90°')
+        self.camera_drone_turn_buttons = (self.camera_drone_turn_left_button, self.camera_drone_turn_button, self.camera_drone_turn_right_button)
+        for action_button in (self.camera_drone_button, self.camera_drone_lock_button, *self.camera_drone_turn_buttons):
+            action_button.setMinimumHeight(28)
         self.camera_drone_button.setEnabled(False)
         self.camera_drone_lock_button.setEnabled(False)
-        self.camera_drone_turn_button.setEnabled(False)
-        drone_actions_layout.addWidget(self.camera_drone_button, 0, 0)
+        for turn_button in self.camera_drone_turn_buttons:
+            turn_button.setEnabled(False)
+        drone_actions_layout.addWidget(self.camera_drone_button, 0, 0, 1, 2)
         toggle_bind = QComboBox()
         toggle_bind.setMinimumWidth(100)
         self._setup_camera_macro_combo(toggle_bind, 'drone_toggle', action_defaults['drone_toggle'])
-        drone_actions_layout.addWidget(toggle_bind, 0, 1)
-        drone_actions_layout.addWidget(self.camera_drone_lock_button, 0, 2)
+        drone_actions_layout.addWidget(toggle_bind, 0, 2)
+        drone_actions_layout.addWidget(self.camera_drone_lock_button, 0, 3, 1, 2)
         lock_bind = QComboBox()
         lock_bind.setMinimumWidth(100)
         self._setup_camera_macro_combo(lock_bind, 'drone_target_lock', action_defaults['drone_target_lock'])
-        drone_actions_layout.addWidget(lock_bind, 0, 3)
-        drone_actions_layout.addWidget(self.camera_drone_turn_button, 1, 0)
-        turn_bind = QComboBox()
-        turn_bind.setMinimumWidth(100)
-        self._setup_camera_macro_combo(turn_bind, 'drone_turn_around', action_defaults['drone_turn_around'])
-        drone_actions_layout.addWidget(turn_bind, 1, 1)
-        drone_actions_layout.addWidget(QLabel('Набрать высоту · удерживать'), 1, 2)
+        drone_actions_layout.addWidget(lock_bind, 0, 5)
+        drone_actions_layout.addWidget(self.camera_drone_turn_left_button, 1, 0)
+        turn_left_bind = QComboBox()
+        turn_left_bind.setMinimumWidth(100)
+        self._setup_camera_macro_combo(turn_left_bind, 'drone_turn_left', action_defaults['drone_turn_left'])
+        drone_actions_layout.addWidget(turn_left_bind, 1, 1)
+        drone_actions_layout.addWidget(self.camera_drone_turn_button, 1, 2)
+        turn_around_bind = QComboBox()
+        turn_around_bind.setMinimumWidth(100)
+        self._setup_camera_macro_combo(turn_around_bind, 'drone_turn_around', action_defaults['drone_turn_around'])
+        drone_actions_layout.addWidget(turn_around_bind, 1, 3)
+        drone_actions_layout.addWidget(self.camera_drone_turn_right_button, 1, 4)
+        turn_right_bind = QComboBox()
+        turn_right_bind.setMinimumWidth(100)
+        self._setup_camera_macro_combo(turn_right_bind, 'drone_turn_right', action_defaults['drone_turn_right'])
+        drone_actions_layout.addWidget(turn_right_bind, 1, 5)
+        drone_actions_layout.addWidget(QLabel('Набрать высоту · удерживать'), 2, 0)
         height_up_bind = QComboBox()
         height_up_bind.setMinimumWidth(100)
         self._setup_camera_macro_combo(height_up_bind, 'drone_height_up', action_defaults['drone_height_up'])
-        drone_actions_layout.addWidget(height_up_bind, 1, 3)
+        drone_actions_layout.addWidget(height_up_bind, 2, 1)
         drone_actions_layout.addWidget(QLabel('Сбросить высоту · удерживать'), 2, 2)
         height_down_bind = QComboBox()
         height_down_bind.setMinimumWidth(100)
@@ -1378,6 +1472,7 @@ class ReplayLabWindow(QMainWindow):
         drone_actions_layout.addWidget(height_down_bind, 2, 3)
         drone_actions_layout.setColumnStretch(0, 1)
         drone_actions_layout.setColumnStretch(2, 1)
+        drone_actions_layout.setColumnStretch(4, 1)
         drone_layout.addWidget(drone_actions)
         drone_tuning_title = QLabel('ХАРАКТЕР ПОЛЁТА ДРОНА')
         drone_tuning_title.setObjectName('cardTitle')
@@ -1430,7 +1525,9 @@ class ReplayLabWindow(QMainWindow):
         self.camera_reset_button.clicked.connect(self.camera_service.reset_view)
         self.camera_drone_button.clicked.connect(self.camera_service.toggle_drone)
         self.camera_drone_lock_button.clicked.connect(self.camera_service.toggle_drone_target_lock)
-        self.camera_drone_turn_button.clicked.connect(self.camera_service.turn_drone_around)
+        self.camera_drone_turn_button.clicked.connect(lambda: self.camera_service.turn_drone(DRONE_TURN_DEGREES['drone_turn_around']))
+        self.camera_drone_turn_left_button.clicked.connect(lambda: self.camera_service.turn_drone(DRONE_TURN_DEGREES['drone_turn_left']))
+        self.camera_drone_turn_right_button.clicked.connect(lambda: self.camera_service.turn_drone(DRONE_TURN_DEGREES['drone_turn_right']))
         return tab
 
     @staticmethod
@@ -1525,7 +1622,7 @@ class ReplayLabWindow(QMainWindow):
             return
         path = Path(str(item.data(Qt.ItemDataRole.UserRole))).resolve()
         self.launch_replay_button.setEnabled(path.is_file())
-        if self.auto_launch_checkbox.isChecked() and (not self.launcher.is_current_replay(path)):
+        if self.auto_launch_checkbox.isChecked() and self._launch_task is None and (not self.launcher.is_current_replay(path)):
             self._launch_replay_in_warcraft(path)
         if self.report is not None and self.current_path is not None and (path == self.current_path.resolve()):
             return
@@ -1537,6 +1634,8 @@ class ReplayLabWindow(QMainWindow):
         self.load_replay(path)
 
     def _launch_current_replay(self) -> None:
+        if self._launch_task is not None:
+            return
         item = self.replay_list.currentItem()
         if item is None:
             return
@@ -1663,6 +1762,9 @@ class ReplayLabWindow(QMainWindow):
         return bool(report is not None and 'iccup' in report.map_path.lower() or 'iccup' in path.name.lower())
 
     def _launch_replay_in_warcraft(self, path: Path) -> bool:
+        if self._launch_task is not None:
+            self.seek_status.setText('Другой replay уже запускается; дождись подтверждения.')
+            return False
         try:
             executable = self._warcraft_executable()
             if executable is None:
@@ -1686,26 +1788,52 @@ class ReplayLabWindow(QMainWindow):
                 iccup_launcher = self._iccup_launcher()
                 if executable is None or iccup_launcher is None:
                     return False
-            if iccup_launcher is not None:
-                self.connection_label.setText('Открываю реплей через iCCup…')
-                self.connection_label.setObjectName('connectionOffline')
-                self.connection_label.style().unpolish(self.connection_label)
-                self.connection_label.style().polish(self.connection_label)
-                QApplication.processEvents()
-                pid = self.launcher.launch_via_iccup(iccup_launcher, executable, path, replace_running=bool(running))
-                launch_mode = 'через iCCup'
-            else:
-                pid = self.launcher.launch(executable, path, replace_running=bool(running))
-                launch_mode = 'напрямую'
         except (WarcraftLaunchError, SeekBackendError, OSError) as exc:
             QMessageBox.warning(self, 'Запуск Warcraft', str(exc))
             return False
-        self.connection_label.setText(f'Warcraft запускается · PID {pid}')
+        self.connection_label.setText('Открываю replay через iCCup · ввод в игровых окнах временно защищён…' if iccup_launcher is not None else 'Запускаю Warcraft…')
         self.connection_label.setObjectName('connectionOffline')
         self.connection_label.style().unpolish(self.connection_label)
         self.connection_label.style().polish(self.connection_label)
-        self.seek_status.setText(f'{path.name} открыт {launch_mode}. После загрузки нажми подключение.')
+        self._set_launch_busy(True)
+        task = LaunchTask(self.launcher, executable, path, iccup_launcher, replace_running=bool(running))
+        task.signals.ready.connect(self._launch_ready)
+        task.signals.failed.connect(self._launch_failed)
+        task.signals.finished.connect(self._launch_finished)
+        self._launch_task = task
+        QThreadPool.globalInstance().start(task)
         return True
+
+    def _set_launch_busy(self, busy: bool) -> None:
+        current = self.replay_list.currentItem()
+        can_launch = not busy and current is not None and Path(str(current.data(Qt.ItemDataRole.UserRole))).is_file()
+        self.launch_replay_button.setEnabled(can_launch)
+        self.launch_paths_button.setEnabled(not busy)
+        self.auto_launch_checkbox.setEnabled(not busy)
+
+    def _launch_ready(self, result: tuple[int, Path, str, bool]) -> None:
+        pid, path, launch_mode, launch_verified = result
+        self.connection_label.setText(f'Replay запущен · PID {pid}' if launch_verified else f'Warcraft запускается · PID {pid}')
+        self.connection_label.setObjectName('connectionOffline')
+        self.connection_label.style().unpolish(self.connection_label)
+        self.connection_label.style().polish(self.connection_label)
+        if launch_verified:
+            self.seek_status.setText(f'{path.name} запущен {launch_mode}; живой replay подтверждён.')
+        else:
+            self.seek_status.setText(f'{path.name} открыт {launch_mode}. После загрузки нажми подключение.')
+        if self._pending_backward_seek is not None:
+            self.seek_status.setText('Возврат назад · replay перезапущен, подключаюсь…')
+            QTimer.singleShot(250 if launch_verified else 4000, self._attach_for_backward_seek)
+
+    def _launch_failed(self, message: str) -> None:
+        if self._pending_backward_seek is not None:
+            self._clear_backward_seek()
+        self.connection_label.setText('Replay не запущен')
+        QMessageBox.warning(self, 'Запуск Warcraft', message)
+
+    def _launch_finished(self) -> None:
+        self._launch_task = None
+        self._set_launch_busy(False)
 
     def load_replay(self, path: Path) -> None:
         self.current_path = path.resolve()
@@ -1748,7 +1876,7 @@ class ReplayLabWindow(QMainWindow):
         self._fill_stats(report)
         self._fill_camera_players(report)
         self._fill_moments(report, game_duration)
-        self._fill_items(report)
+        self._refresh_chat()
         self.seek_button.setEnabled(self.seeker.attached)
         self.status_label.setText(f'{Path(report.source_file).name} · {len(report.dota_players)} игроков · {len(report.kills)} убийств')
 
@@ -1854,66 +1982,67 @@ class ReplayLabWindow(QMainWindow):
             slot_label.setToolTip(tooltip)
 
     def _fill_moments(self, report: ReplayReport, game_duration: int) -> None:
-        events = sorted(report.multi_kills, key=lambda event: (event.game_time_ms, event.count))
-        self.timeline.set_events(events, game_duration)
+        self._replay_moments = build_replay_moments(report)
+        self.timeline.set_events(self._replay_moments, game_duration)
         self.timeline.setValue(0)
         self.end_label.setText(format_time(game_duration))
+        self._refresh_moments()
+
+    def _visible_moments(self) -> list[ReplayMoment]:
+        filter_key = str(self.moment_filter.currentData() or 'all')
+        if filter_key == 'kills':
+            return [moment for moment in self._replay_moments if moment.kind == ReplayMomentKind.KILL]
+        if filter_key == 'highlights':
+            return [moment for moment in self._replay_moments if moment.kind != ReplayMomentKind.KILL]
+        return list(self._replay_moments)
+
+    @staticmethod
+    def _moment_color(moment: ReplayMoment) -> QColor:
+        if moment.kind == ReplayMomentKind.FIRST_BLOOD:
+            return QColor('#f2c94c')
+        if moment.severity >= 3:
+            return QColor('#ff6b57')
+        if moment.kind == ReplayMomentKind.MULTI_KILL:
+            return QColor('#55a7ff')
+        return QColor('#9aa8bb')
+
+    def _refresh_moments(self, *_: object) -> None:
+        if not hasattr(self, 'moments_table'):
+            return
+        events = self._visible_moments()
+        if hasattr(self, 'timeline'):
+            self.timeline.set_events(events, self.timeline.maximum())
         table = self.moments_table
         table.setRowCount(len(events))
         for row, event in enumerate(events):
             hero = event.killer_hero_name or event.killer_hero_rawcode
             killer = event.killer_name + (f' · {hero}' if hero else '')
-            values = [format_time(event.game_time_ms, millis=True), event.label, killer, ', '.join(event.victim_names)]
+            target_time = event_seek_target(event.game_time_ms, self.seek_preroll.value())
+            values = [format_time(event.game_time_ms, millis=True), format_time(target_time, millis=True), event.label, killer, ', '.join(event.victim_names)]
             for column, value in enumerate(values):
                 item = table_item(value)
                 item.setData(Qt.ItemDataRole.UserRole, event.game_time_ms)
-                if column == 1:
-                    item.setForeground(QColor('#ff6b57' if event.count >= 3 else '#55a7ff'))
                 if column == 2:
+                    item.setForeground(self._moment_color(event))
+                if column == 3:
                     icon_path = hero_icon_path(event.killer_hero_name)
                     if icon_path is not None:
                         item.setIcon(QIcon(str(icon_path)))
                 table.setItem(row, column, item)
 
-    def _fill_items(self, report: ReplayReport) -> None:
-        table = self.items_table
-        table.setSortingEnabled(False)
-        table.setRowCount(len(report.item_timings))
-        for row, timing in enumerate(report.item_timings):
-            definition = get_item_definition(timing.item_rawcode)
-            cost = definition.cost if definition is not None else None
-            icon_path = item_icon_path(timing.item_name)
-            timing_label, seek_time, _ = visible_item_timing(timing)
-            tooltip_lines = [timing.item_name or 'Неизвестное имя']
-            if cost is not None:
-                tooltip_lines.append(f'Стоимость: {number(cost)} gold')
-            tooltip = '\n'.join(tooltip_lines)
-            values = [timing.player_name, timing.item_name or 'Неизвестное имя', number(cost)]
-            if self.item_timings_visible:
-                values.append(timing_label)
-            for column, value in enumerate(values):
-                item = table_item(value, tooltip=tooltip)
-                if self.item_timings_visible:
-                    item.setData(Qt.ItemDataRole.UserRole, seek_time)
-                if column == 1:
-                    if icon_path is not None:
-                        item.setIcon(QIcon(str(icon_path)))
-                table.setItem(row, column, item)
-        table.setSortingEnabled(True)
+    def _seek_preroll_changed(self, seconds: int) -> None:
+        self.settings.setValue('seek_preroll_seconds', seconds)
+        self._refresh_moments()
 
-    def _item_timing_double_clicked(self, row: int, column: int) -> None:
-        item = self.items_table.item(row, column)
-        if item is None:
-            return
-        game_time = item.data(Qt.ItemDataRole.UserRole)
-        if game_time is None:
-            return
-        self.tabs.setCurrentIndex(1)
-        self.timeline.setValue(int(game_time))
+    def _select_event_time(self, event_time_ms: int, *, label: str) -> None:
+        preroll_seconds = self.seek_preroll.value()
+        target_time = event_seek_target(event_time_ms, preroll_seconds)
+        self.timeline.setValue(target_time)
+        self.time_input.setText(format_time(target_time))
+        preroll_note = 'точно к событию' if preroll_seconds == 0 else f'за {preroll_seconds} сек'
+        self.seek_status.setText(f'{label}: событие {format_time(event_time_ms, millis=True)} · старт {format_time(target_time, millis=True)} ({preroll_note}).')
         if self.seeker.attached:
             self.seek_to_target()
-        else:
-            self.seek_status.setText(f'Выбран предмет на {format_time(int(game_time), millis=True)}. Подключись к Warcraft, чтобы перейти к моменту.')
 
     def _moment_clicked(self, row: int, column: int) -> None:
         item = self.moments_table.item(row, column)
@@ -1922,11 +2051,51 @@ class ReplayLabWindow(QMainWindow):
         game_time = item.data(Qt.ItemDataRole.UserRole)
         if game_time is None:
             return
-        self.timeline.setValue(int(game_time))
-        if self.seeker.attached:
-            self.seek_to_target()
-        else:
-            self.seek_status.setText(f'Выбран {format_time(int(game_time), millis=True)}. Подключись к Warcraft, чтобы перейти.')
+        event_label = self.moments_table.item(row, 2).text() if self.moments_table.item(row, 2) is not None else 'Событие'
+        self._select_event_time(int(game_time), label=event_label)
+
+    def _refresh_chat(self, *_: object) -> None:
+        if self.report is None or not hasattr(self, 'chat_table'):
+            return
+        report = self.report
+        game_start = report.game_start_ms or 0
+        player_names = {player.player_id: player.name for player in report.players}
+        player_names.update({player.network_player_id: player.name for player in report.dota_players})
+        filter_key = str(self.chat_filter.currentData() or 'match')
+        query = self.chat_search.text().strip().casefold()
+        channel_names = {0: 'Общий', 1: 'Союзники', 2: 'Наблюдатели', 7: 'Система'}
+        messages: list[tuple[ChatMessage, int, str, str]] = []
+        for message in report.chats:
+            relative_time = message.time_ms - game_start
+            player_name = player_names.get(message.player_id, f'Player {message.player_id}')
+            if filter_key == 'match' and (relative_time < 0 or message.mode not in (0, 1, 2)):
+                continue
+            if filter_key == 'pregame' and relative_time >= 0:
+                continue
+            if filter_key == 'all_chat' and message.mode != 0:
+                continue
+            if filter_key == 'allies' and message.mode != 1:
+                continue
+            if query and query not in (player_name + '\n' + message.text).casefold():
+                continue
+            messages.append((message, relative_time, player_name, channel_names.get(message.mode, f'Канал {message.mode}' if message.mode is not None else 'Служебный')))
+        self.chat_table.setRowCount(len(messages))
+        for row, (message, relative_time, player_name, channel) in enumerate(messages):
+            values = [format_relative_time(relative_time), channel, player_name, message.text]
+            for column, value in enumerate(values):
+                item = table_item(value)
+                item.setData(Qt.ItemDataRole.UserRole, max(relative_time, 0))
+                self.chat_table.setItem(row, column, item)
+
+    def _chat_message_double_clicked(self, row: int, column: int) -> None:
+        item = self.chat_table.item(row, column)
+        if item is None:
+            return
+        game_time = item.data(Qt.ItemDataRole.UserRole)
+        if game_time is None:
+            return
+        self.tabs.setCurrentIndex(0)
+        self._select_event_time(int(game_time), label='Сообщение в чате')
 
     def _apply_time_input(self) -> bool:
         try:
@@ -1977,7 +2146,6 @@ class ReplayLabWindow(QMainWindow):
             self._clear_backward_seek()
             return
         self.seek_status.setText('Возврат назад · перезапускаю реплей и жду загрузки…')
-        QTimer.singleShot(4000, self._attach_for_backward_seek)
 
     def _attach_for_backward_seek(self) -> None:
         if self._pending_backward_seek is None:
@@ -2057,8 +2225,9 @@ class ReplayLabWindow(QMainWindow):
         if action == 'drone_target_lock':
             self.camera_service.toggle_drone_target_lock()
             return
-        if action == 'drone_turn_around':
-            self.camera_service.turn_drone_around()
+        drone_turn_degrees = DRONE_TURN_DEGREES.get(action)
+        if drone_turn_degrees is not None:
+            self.camera_service.turn_drone(drone_turn_degrees)
             return
         if action in {'drone_height_up', 'drone_height_down'}:
             return
@@ -2088,7 +2257,8 @@ class ReplayLabWindow(QMainWindow):
         self.camera_reset_button.setEnabled(True)
         self.camera_drone_button.setEnabled(True)
         self.camera_drone_lock_button.setEnabled(False)
-        self.camera_drone_turn_button.setEnabled(False)
+        for turn_button in self.camera_drone_turn_buttons:
+            turn_button.setEnabled(False)
         self.camera_service.update_settings(self._camera_motion_settings())
         self.camera_service.update_drone_settings(self._drone_settings())
         update_hz = self.camera_service.native_update_hz
@@ -2130,7 +2300,8 @@ class ReplayLabWindow(QMainWindow):
         self.camera_drone_button.setText('Включить Fly Drone')
         self.camera_drone_lock_button.setEnabled(False)
         self.camera_drone_lock_button.setText('Захватить героя')
-        self.camera_drone_turn_button.setEnabled(False)
+        for turn_button in self.camera_drone_turn_buttons:
+            turn_button.setEnabled(False)
         self.camera_status.setText('Плавная камера выключена')
         self.camera_status.setObjectName('connectionOffline')
         self.camera_status.style().unpolish(self.camera_status)
@@ -2167,7 +2338,8 @@ class ReplayLabWindow(QMainWindow):
     def _camera_drone(self, active: bool) -> None:
         self.camera_drone_button.setText('Выключить Fly Drone' if active else 'Включить Fly Drone')
         self.camera_drone_lock_button.setEnabled(active and self.camera_service.following)
-        self.camera_drone_turn_button.setEnabled(active)
+        for turn_button in self.camera_drone_turn_buttons:
+            turn_button.setEnabled(active)
         if not active:
             self.camera_drone_lock_button.setText('Захватить героя')
             if self.camera_service.running:
@@ -2311,9 +2483,19 @@ def main() -> int:
         self_test_settings.clear()
     window = ReplayLabWindow(self_test_settings)
     if self_test:
+        try:
+            Desktop = window.launcher._prepare_pywinauto()
+            Desktop(backend='uia').windows()
+        except Exception:
+            window.close()
+            return 26
         expected_camera_tabs = ('Управление', 'Герои · 10', 'Операторские шоты', 'Fly Drone')
+        expected_product_tabs = ('Просмотр', 'Съёмка', 'Статистика')
+        expected_statistics_tabs = ('Игроки', 'Чат')
+        actual_product_tabs = tuple((window.tabs.tabText(index) for index in range(window.tabs.count())))
+        actual_statistics_tabs = tuple((window.stats_sections.tabText(index) for index in range(window.stats_sections.count())))
         actual_camera_tabs = tuple((window.camera_tool_tabs.tabText(index) for index in range(window.camera_tool_tabs.count())))
-        if actual_camera_tabs != expected_camera_tabs or len(window.camera_hero_slots) != CAMERA_HERO_SLOT_COUNT or len(window.camera_transition_buttons) != len(CAMERA_TRANSITION_ACTIONS):
+        if actual_product_tabs != expected_product_tabs or actual_statistics_tabs != expected_statistics_tabs or actual_camera_tabs != expected_camera_tabs or (len(window.camera_hero_slots) != CAMERA_HERO_SLOT_COUNT) or (len(window.camera_transition_buttons) != len(CAMERA_TRANSITION_ACTIONS)):
             window.close()
             return 23
 
@@ -2340,7 +2522,7 @@ def main() -> int:
                 window.close()
                 return 22
             hero_count = sum((bool(player.hero_rawcode) for player in window.report.dota_players))
-            if hero_count <= 0:
+            if hero_count <= 0 or not window._replay_moments or window.chat_table.rowCount() <= 0:
                 window.close()
                 return 24
             for hero_slot in window.camera_hero_slots:

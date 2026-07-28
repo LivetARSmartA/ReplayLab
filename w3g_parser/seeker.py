@@ -10,7 +10,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
-from .warcraft_build import GameDllMatch, WarcraftBuildError, match_game_dll
+from .warcraft_build import GameDllMatch, WARCRAFT_126A_WAR3_SHA256, WarcraftBuildError, match_game_dll
 
 class SeekBackendError(RuntimeError):
     pass
@@ -77,7 +77,7 @@ class SeekProfile:
 SEEK_PROFILES = {'gentle': SeekProfile(key='gentle', label='Бережный · до 16x', maximum_speed=16, far_poll_seconds=0.16, lower_process_priority=True), 'balanced': SeekProfile(key='balanced', label='Сбалансированный · до 32x', maximum_speed=32, far_poll_seconds=0.1, lower_process_priority=True), 'turbo': SeekProfile(key='turbo', label='Турбо · максимум', maximum_speed=65535, far_poll_seconds=0.06, lower_process_priority=False)}
 
 class Warcraft126MemoryBackend:
-    EXPECTED_WAR3_SHA256 = '28173101FCBEB4CDCAC0F83E0E724AA444209B479A2AC1C1784E0D4310889909'
+    EXPECTED_WAR3_SHA256 = WARCRAFT_126A_WAR3_SHA256
     REPLAY_LENGTH_OFFSET = 2308
     REPLAY_POSITION_OFFSET = 7456
     REPLAY_SPEED_OFFSET = 9060

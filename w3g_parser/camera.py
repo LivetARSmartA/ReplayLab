@@ -195,11 +195,14 @@ class SmoothCameraController:
             self._drone_target_lock = not self._drone_target_lock
             return self._drone_target_lock
 
-    def turn_drone_around(self) -> None:
+    def turn_drone(self, angle_degrees: float) -> None:
         if not self.drone_enabled:
             raise SeekBackendError('Сначала включи Fly Drone.')
+        angle_radians = math.radians(angle_degrees)
+        if not math.isfinite(angle_radians) or abs(angle_radians) > math.tau:
+            raise ValueError('Угол поворота Drone должен быть в пределах 360°.')
         with self._motion_lock:
-            self._native.turn_drone_around()
+            self._native.turn_drone(angle_radians)
 
     def start(self) -> None:
         if self.running:
@@ -210,18 +213,12 @@ class SmoothCameraController:
 
     def follow_selected_unit(self) -> str:
         address, rawcode = self._backend.selected_unit()
-        self._clear_transition()
-        with self._follow_lock:
-            self._follow_unit = address
-        self._input_router.set_follow_active(True)
+        self._activate_follow_target(address)
         return rawcode
 
     def follow_player_hero(self, player_slot: int, hero_rawcode: str) -> str:
         address, rawcode = self._backend.find_player_hero(player_slot, hero_rawcode, self._stop)
-        self._clear_transition()
-        with self._follow_lock:
-            self._follow_unit = address
-        self._input_router.set_follow_active(True)
+        self._activate_follow_target(address)
         return rawcode
 
     def resolve_player_hero(self, player_slot: int, hero_rawcode: str) -> tuple[int, str]:
@@ -229,6 +226,9 @@ class SmoothCameraController:
 
     def follow_resolved_unit(self, address: int) -> None:
         self._backend.unit_camera_position(address)
+        self._activate_follow_target(address)
+
+    def _activate_follow_target(self, address: int) -> None:
         self._clear_transition()
         with self._follow_lock:
             self._follow_unit = address
