@@ -17,7 +17,8 @@ from .launcher import WarcraftLaunchError, WarcraftReplayLauncher, likely_iccup_
 from .moments import ReplayMoment, ReplayMomentKind, build_replay_moments
 from .native_camera import DroneSettings
 from .parser import ChatMessage, DotaPlayer, ItemTiming, ReplayReport, parse_replay
-from .seeker import AttachResult, SEEK_PROFILES, SeekBackendError, SeekCancelled, SeekProfile, SeekProgress, Warcraft126MemoryBackend
+from .seeker import AttachResult, SEEK_PROFILES, SeekBackendError, SeekCancelled, SeekMetrics, SeekProfile, SeekProgress, Warcraft126MemoryBackend
+from .settings import discover_replays, forget_failed_replay, recover_persistent_settings
 APP_NAME = 'Warcraft III Replay Lab'
 CAMERA_HERO_SLOT_COUNT = 10
 CAMERA_CORE_MACRO_ACTIONS = (('toggle_camera', 'Камера: вкл / выкл', 119), ('follow_toggle', 'Follow: вкл / выкл', 118), ('smart_follow_toggle', 'Smart Follow', 116), ('reset_view', 'Вернуть обзор', 120))
@@ -174,9 +175,12 @@ class SeekerSignals(QObject):
     scan_progress = Signal(int)
     attached = Signal(object)
     seek_progress = Signal(object)
+    seek_metrics = Signal(object)
     seek_finished = Signal(int)
     failed = Signal(str)
+    soft_failed = Signal(str)
     cancelled = Signal()
+    seek_replaced = Signal(int)
 
 class SeekerService(QObject):
 
@@ -188,39 +192,59 @@ class SeekerService(QObject):
         self._cancel = threading.Event()
         self._lock = threading.Lock()
         self._busy = False
+        self._operation: str | None = None
+        self._pending_seek: tuple[int, SeekProfile, float] | None = None
         self.attached = False
 
-    def _begin(self, operation: str, job: Callable[[], None]) -> bool:
+    def _begin(self, operation: str, job: Callable[[], None], *, quiet: bool=False) -> bool:
         with self._lock:
             if self._busy:
                 self.signals.failed.emit('Дождись окончания текущей операции или нажми «Стоп».')
                 return False
             self._busy = True
+            self._operation = operation
         self.signals.operation_started.emit(operation)
 
         def guarded() -> None:
             try:
                 job()
             except SeekCancelled:
-                self.signals.cancelled.emit()
+                with self._lock:
+                    replaced = operation == 'seek' and self._pending_seek is not None
+                if not replaced:
+                    self.signals.cancelled.emit()
             except (SeekBackendError, OSError, ValueError) as exc:
-                self.signals.failed.emit(str(exc))
+                (self.signals.soft_failed if quiet else self.signals.failed).emit(str(exc))
             except Exception as exc:
-                self.signals.failed.emit(f'Неожиданная ошибка Seeker: {exc}')
+                signal = self.signals.soft_failed if quiet else self.signals.failed
+                signal.emit(f'Неожиданная ошибка Seeker: {exc}')
             finally:
+                pending_seek: tuple[int, SeekProfile, float] | None = None
                 with self._lock:
                     self._busy = False
+                    self._operation = None
+                    if operation == 'seek':
+                        pending_seek = self._pending_seek
+                        self._pending_seek = None
                 self.signals.operation_finished.emit(operation)
+                if pending_seek is not None:
+                    self.seek(pending_seek[0], pending_seek[1], requested_at=pending_seek[2])
         self._executor.submit(guarded)
         return True
 
-    def attach_to_warcraft(self) -> None:
+    def attach_to_warcraft(self, pid: int | None=None, *, quiet: bool=False) -> None:
         self._cancel.clear()
 
         def job() -> None:
+            if self._backend is not None:
+                reused = self._backend.reuse_attach(pid)
+                if reused is not None:
+                    self.attached = True
+                    self.signals.attached.emit(reused)
+                    return
             backend = Warcraft126MemoryBackend()
             try:
-                result = backend.attach(lambda progress: self.signals.scan_progress.emit(int(progress * 100)), self._cancel)
+                result = backend.attach(lambda progress: self.signals.scan_progress.emit(int(progress * 100)), self._cancel, pid)
             except Exception:
                 backend.close()
                 raise
@@ -229,7 +253,7 @@ class SeekerService(QObject):
             self._backend = backend
             self.attached = True
             self.signals.attached.emit(result)
-        self._begin('attach', job)
+        self._begin('attach', job, quiet=quiet)
 
     @property
     def busy(self) -> bool:
@@ -244,20 +268,37 @@ class SeekerService(QObject):
             self._backend = None
         self.attached = False
 
-    def seek(self, target_replay_time_ms: int, profile: SeekProfile) -> None:
+    def seek(self, target_replay_time_ms: int, profile: SeekProfile, *, requested_at: float | None=None) -> None:
+        request_time = requested_at or time.monotonic()
+        with self._lock:
+            if self._busy:
+                if self._operation == 'seek':
+                    self._pending_seek = (target_replay_time_ms, profile, request_time)
+                    self._cancel.set()
+                    self.signals.seek_replaced.emit(target_replay_time_ms)
+                    return
+                self.signals.failed.emit('Дождись подключения к Warcraft или нажми «Стоп».')
+                return
         self._cancel.clear()
 
         def job() -> None:
             if self._backend is None or not self.attached:
                 raise SeekBackendError('Сначала подключись к Warcraft с уже открытым реплеем.')
-            position = self._backend.seek_forward(target_replay_time_ms, self._cancel, self.signals.seek_progress.emit, profile=profile)
+            position = self._backend.seek_forward(target_replay_time_ms, self._cancel, self.signals.seek_progress.emit, profile=profile, request_started_at=request_time)
+            metrics = self._backend.last_seek_metrics
+            if metrics is not None:
+                self.signals.seek_metrics.emit(metrics)
             self.signals.seek_finished.emit(position)
         self._begin('seek', job)
 
     def cancel(self) -> None:
+        with self._lock:
+            self._pending_seek = None
         self._cancel.set()
 
     def shutdown(self) -> None:
+        with self._lock:
+            self._pending_seek = None
         self._cancel.set()
 
         def close_backend() -> None:
@@ -657,6 +698,15 @@ class ReplayLabWindow(QMainWindow):
         self.resize(1420, 850)
         self.setMinimumSize(QSize(1020, 650))
         self.settings = settings or QSettings('ReplayLab', 'Warcraft3ReplayLab')
+        self.settings_recovery = recover_persistent_settings(self.settings)
+        stored_roots = self.settings.value('replay_roots', [])
+        if isinstance(stored_roots, str):
+            stored_roots = [stored_roots]
+        self._replay_roots = [Path(str(path)).resolve(strict=False) for path in stored_roots or []]
+        stored_library = self.settings.value('replay_library', [])
+        if isinstance(stored_library, str):
+            stored_library = [stored_library]
+        self._manual_replay_paths = {Path(str(path)).resolve(strict=False) for path in stored_library or []}
         self.report: ReplayReport | None = None
         self.current_path: Path | None = None
         self._replay_moments: list[ReplayMoment] = []
@@ -668,6 +718,8 @@ class ReplayLabWindow(QMainWindow):
         self._pending_backward_profile: SeekProfile | None = None
         self._pending_backward_deadline = 0.0
         self._pending_attach_attempt = False
+        self._auto_attach_pid: int | None = None
+        self._auto_attach_deadline = 0.0
         self.seeker = SeekerService()
         self.camera_macro_signals = CameraMacroSignals()
         self.camera_input = CameraInputRouter(self.camera_macro_signals.triggered.emit)
@@ -686,11 +738,10 @@ class ReplayLabWindow(QMainWindow):
             QTimer.singleShot(0, lambda message=str(exc): self._camera_error(message))
         else:
             self._camera_input_ready = True
-        stored_paths = self.settings.value('replay_library', [])
-        if isinstance(stored_paths, str):
-            stored_paths = [stored_paths]
-        for stored_path in stored_paths or []:
-            path = Path(str(stored_path))
+        indexed_paths = set(self._manual_replay_paths)
+        for replay_root in self._replay_roots:
+            indexed_paths.update(discover_replays(replay_root))
+        for path in sorted(indexed_paths, key=lambda replay: (replay.stat().st_mtime if replay.is_file() else 0.0, str(replay).casefold()), reverse=True):
             if path.is_file():
                 self._add_replay(path, persist=False)
         startup_replay: Path | None = None
@@ -706,7 +757,9 @@ class ReplayLabWindow(QMainWindow):
         self.launch_replay_button.setEnabled(self.replay_list.currentItem() is not None)
         self._save_replay_library()
         if startup_replay is not None:
-            self.load_replay(startup_replay)
+            self.status_label.setText(f'Выбран {startup_replay.name}. Открой его вручную — ReplayLab не повторяет операции прошлого сеанса автоматически.')
+        elif self.settings_recovery.repaired:
+            self.status_label.setText('ReplayLab очистил незавершённое состояние прошлого сеанса.')
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -921,7 +974,7 @@ class ReplayLabWindow(QMainWindow):
         layout = QVBoxLayout(transport)
         layout.setContentsMargins(12, 8, 12, 8)
         seeker_bar = QHBoxLayout()
-        self.attach_button = QPushButton('Подключиться к Warcraft')
+        self.attach_button = QPushButton('Подключить сейчас')
         self.seek_button = QPushButton('Перейти к таймингу')
         self.cancel_button = QPushButton('Стоп')
         self.seek_profile = QComboBox()
@@ -930,7 +983,7 @@ class ReplayLabWindow(QMainWindow):
         stored_profile = str(self.settings.value('seek_profile', 'balanced'))
         profile_index = self.seek_profile.findData(stored_profile)
         self.seek_profile.setCurrentIndex(profile_index if profile_index >= 0 else 1)
-        self.seek_profile.setToolTip('Бережный меньше мешает другим программам. Турбо использует максимум, который способен обработать Warcraft.')
+        self.seek_profile.setToolTip('Eco снижает нагрев. Balanced ограничен 32x. Maximum временно запрашивает HighQoS и использует максимум Warcraft.')
         self.seek_profile.currentIndexChanged.connect(lambda: self.settings.setValue('seek_profile', self.seek_profile.currentData()))
         self.seek_button.setEnabled(False)
         self.cancel_button.setEnabled(False)
@@ -959,7 +1012,10 @@ class ReplayLabWindow(QMainWindow):
         self.seek_status = QLabel('Выбери событие или введи точный тайминг.')
         self.seek_status.setObjectName('hint')
         layout.addWidget(self.seek_status)
-        self.attach_button.clicked.connect(self.seeker.attach_to_warcraft)
+        self.seek_metrics_label = QLabel('Seeker подключается автоматически после запуска реплея.')
+        self.seek_metrics_label.setObjectName('hint')
+        layout.addWidget(self.seek_metrics_label)
+        self.attach_button.clicked.connect(lambda: self.seeker.attach_to_warcraft())
         self.seek_button.clicked.connect(self.seek_to_target)
         self.cancel_button.clicked.connect(self.seeker.cancel)
         self.timeline.valueChanged.connect(lambda value: self.time_input.setText(format_time(value)))
@@ -1547,8 +1603,11 @@ class ReplayLabWindow(QMainWindow):
         signals.scan_progress.connect(lambda value: self.seek_status.setText(f'Ищу активный реплей в памяти Warcraft… {value}%'))
         signals.attached.connect(self._seeker_attached)
         signals.seek_progress.connect(self._seek_progress)
+        signals.seek_metrics.connect(self._seek_metrics)
         signals.seek_finished.connect(self._seek_done)
         signals.failed.connect(self._seeker_error)
+        signals.soft_failed.connect(self._seeker_soft_error)
+        signals.seek_replaced.connect(lambda target: self.seek_status.setText(f'Новая точка {format_time(target, millis=True)} принята · останавливаю предыдущую перемотку…'))
         signals.cancelled.connect(lambda: self.seek_status.setText('Перемотка остановлена. Warcraft оставлен на паузе.'))
 
     def _wire_camera(self) -> None:
@@ -1586,26 +1645,37 @@ class ReplayLabWindow(QMainWindow):
             return
         folder = Path(directory)
         self.settings.setValue('last_directory', str(folder))
-        replays = sorted(folder.glob('*.w3g'), key=lambda path: path.stat().st_mtime, reverse=True)
+        root = folder.resolve(strict=False)
+        if root not in self._replay_roots:
+            self._replay_roots.append(root)
+            self._save_replay_roots()
+        replays = discover_replays(root)
         for replay in replays:
-            self._add_replay(replay)
+            self._add_replay(replay, persist=False)
         if replays:
-            item = self._add_replay(replays[0], select=True)
+            item = self._add_replay(replays[0], select=True, persist=False)
             self._activate_replay(item)
         else:
             self.status_label.setText('В выбранной папке нет файлов .w3g.')
 
     def _save_replay_library(self) -> None:
-        paths = [str(self.replay_list.item(index).data(Qt.ItemDataRole.UserRole)) for index in range(self.replay_list.count())]
+        paths = sorted((str(path) for path in self._manual_replay_paths if path.is_file()))
         self.settings.setValue('replay_library', paths)
+
+    def _save_replay_roots(self) -> None:
+        self.settings.setValue('replay_roots', [str(path) for path in self._replay_roots])
 
     def _add_replay(self, path: Path, *, select: bool=False, persist: bool=True) -> QListWidgetItem:
         resolved = path.resolve()
+        if persist:
+            self._manual_replay_paths.add(resolved)
         for index in range(self.replay_list.count()):
             item = self.replay_list.item(index)
             if Path(str(item.data(Qt.ItemDataRole.UserRole))) == resolved:
                 if select:
                     self.replay_list.setCurrentItem(item)
+                if persist:
+                    self._save_replay_library()
                 return item
         item = QListWidgetItem(resolved.name)
         item.setToolTip(str(resolved))
@@ -1820,12 +1890,13 @@ class ReplayLabWindow(QMainWindow):
         if launch_verified:
             self.seek_status.setText(f'{path.name} запущен {launch_mode}; живой replay подтверждён.')
         else:
-            self.seek_status.setText(f'{path.name} открыт {launch_mode}. После загрузки нажми подключение.')
+            self.seek_status.setText(f'{path.name} открыт {launch_mode}. Seeker подключится после загрузки автоматически.')
+        self._schedule_auto_attach(pid, delay_ms=150 if launch_verified else 2500)
         if self._pending_backward_seek is not None:
             self.seek_status.setText('Возврат назад · replay перезапущен, подключаюсь…')
-            QTimer.singleShot(250 if launch_verified else 4000, self._attach_for_backward_seek)
 
     def _launch_failed(self, message: str) -> None:
+        self._auto_attach_pid = None
         if self._pending_backward_seek is not None:
             self._clear_backward_seek()
         self.connection_label.setText('Replay не запущен')
@@ -1834,6 +1905,25 @@ class ReplayLabWindow(QMainWindow):
     def _launch_finished(self) -> None:
         self._launch_task = None
         self._set_launch_busy(False)
+
+    def _schedule_auto_attach(self, pid: int, *, delay_ms: int) -> None:
+        self._auto_attach_pid = pid
+        self._auto_attach_deadline = time.monotonic() + 25.0
+        QTimer.singleShot(delay_ms, self._auto_attach_seeker)
+
+    def _auto_attach_seeker(self) -> None:
+        pid = self._auto_attach_pid
+        if pid is None or self.seeker.attached:
+            return
+        if time.monotonic() >= self._auto_attach_deadline:
+            self._auto_attach_pid = None
+            self.seek_status.setText('Replay запущен, но Seeker не успел подключиться. Нажми «Подключить сейчас».')
+            return
+        if self.seeker.busy:
+            QTimer.singleShot(250, self._auto_attach_seeker)
+            return
+        self.seek_status.setText('Replay запущен · готовлю Instant Seek…')
+        self.seeker.attach_to_warcraft(pid, quiet=True)
 
     def load_replay(self, path: Path) -> None:
         self.current_path = path.resolve()
@@ -1857,6 +1947,7 @@ class ReplayLabWindow(QMainWindow):
         self._parse_task = None
 
     def _parse_error(self, message: str) -> None:
+        forget_failed_replay(self.settings, self.current_path)
         self.status_label.setText('Не удалось разобрать реплей.')
         QMessageBox.critical(self, 'Ошибка парсера', message)
 
@@ -1895,9 +1986,16 @@ class ReplayLabWindow(QMainWindow):
                 item_lines.append(label)
             inventory_tooltip = '\n'.join(item_lines) or 'Пустой инвентарь'
             result = 'Победа' if player.won is True else 'Поражение' if player.won is False else '—'
-            values = [player.name, player.hero_name or player.hero_rawcode or '—', player.side or '—', result, number(player.kills), number(player.deaths), number(player.assists), number(player.creep_kills), number(player.creep_denies), number(player.neutral_kills), number(player.final_gold), number(player.inventory_value), number(player.net_worth), '—' if player.apm_average is None else f'{player.apm_average:.1f}', number(player.apm_peak_60s), format_time(player.apm_peak_game_time_ms), f'{number(player.tower_kills)} / {number(player.rax_kills)}']
+            creep_values = [number(player.creep_kills), number(player.creep_denies), number(player.neutral_kills)]
+            creep_tooltip: str | None = None
+            if player.creep_stats_source == 'periodic-snapshot':
+                creep_values = [f'≈{value}' if value != '—' else value for value in creep_values]
+                creep_tooltip = f'Последний доступный срез карты на {format_time(player.creep_stats_game_time_ms)}. Финальный блок статистики не был записан.'
+            elif player.creep_stats_source == 'final':
+                creep_tooltip = 'Финальная статистика карты.'
+            values = [player.name, player.hero_name or player.hero_rawcode or '—', player.side or '—', result, number(player.kills), number(player.deaths), number(player.assists), *creep_values, number(player.final_gold), number(player.inventory_value), number(player.net_worth), '—' if player.apm_average is None else f'{player.apm_average:.1f}', number(player.apm_peak_60s), format_time(player.apm_peak_game_time_ms), f'{number(player.tower_kills)} / {number(player.rax_kills)}']
             for column, value in enumerate(values):
-                tooltip = inventory_tooltip if column in (11, 12) else None
+                tooltip = inventory_tooltip if column in (11, 12) else creep_tooltip if column in (7, 8, 9) else None
                 item = table_item(value, tooltip=tooltip)
                 if column == 0:
                     item.setData(Qt.ItemDataRole.UserRole, player.slot)
@@ -2400,13 +2498,17 @@ class ReplayLabWindow(QMainWindow):
             QTimer.singleShot(1500, self._attach_for_backward_seek)
 
     def _seeker_attached(self, result: AttachResult) -> None:
+        self._auto_attach_pid = None
         build_note = ' · совместимая Game.dll' if result.game_dll_match == 'layout-compatible' else ''
         self.connection_label.setText(f'Подключён · PID {result.pid} · {format_time(result.replay_position_ms)}{build_note}')
         self.connection_label.setObjectName('connectionOnline')
         self.connection_label.style().unpolish(self.connection_label)
         self.connection_label.style().polish(self.connection_label)
+        self.attach_button.setText('Переподключить')
         self.seek_button.setEnabled(self.report is not None)
         self.seek_status.setText(f"{result.build_profile or 'Warcraft III 1.26a'} · подключено")
+        cache_note = ' · cache' if result.validation_cache_hit or result.replay_scan_strategy in {'open-session', 'session-cache'} else ''
+        self.seek_metrics_label.setText(f"Instant Seek готов за {result.attach_duration_ms:.0f} мс{cache_note} · replay block: {result.replay_scan_strategy or 'validated'}")
         if self._pending_backward_seek is not None:
             target = self._pending_backward_seek
             profile = self._pending_backward_profile or SEEK_PROFILES['balanced']
@@ -2418,7 +2520,25 @@ class ReplayLabWindow(QMainWindow):
         game_start = self.report.game_start_ms if self.report else 0
         game_position = max(progress.current_replay_time_ms - (game_start or 0), 0)
         self.timeline.setValue(min(game_position, self.timeline.maximum()))
-        self.seek_status.setText(f'Сейчас {format_time(game_position, millis=True)} · скорость {format_seek_speed(progress.speed_value)}')
+        stage = {'starting': 'запуск', 'cruise': 'разгон', 'braking': 'торможение'}.get(progress.stage, progress.stage)
+        details = [f'Сейчас {format_time(game_position, millis=True)}', stage, f'лимит {format_seek_speed(progress.speed_value)}']
+        if progress.effective_speed > 0.01:
+            details.append(f'реально {progress.effective_speed:.1f}x')
+        if progress.eta_seconds is not None:
+            details.append(f'ETA {progress.eta_seconds:.1f} с')
+        self.seek_status.setText(' · '.join(details))
+        metrics = [f'команда {progress.command_latency_ms:.1f} мс']
+        if progress.first_advance_ms is not None:
+            metrics.append(f'первый тик {progress.first_advance_ms:.0f} мс')
+        if progress.process_cpu_percent is not None:
+            metrics.append(f'CPU {progress.process_cpu_percent:.0f}% одного ядра')
+        self.seek_metrics_label.setText(' · '.join(metrics))
+
+    def _seek_metrics(self, metrics: SeekMetrics) -> None:
+        cpu = f' · CPU {metrics.process_cpu_percent:.0f}% одного ядра' if metrics.process_cpu_percent is not None else ''
+        qos = ' · HighQoS' if metrics.high_qos_applied else ''
+        first_tick = f'{metrics.first_advance_ms:.0f} мс' if metrics.first_advance_ms is not None else '—'
+        self.seek_metrics_label.setText(f'{metrics.wall_duration_ms / 1000.0:.2f} с · {metrics.effective_speed:.1f}x · первый тик {first_tick} · перелёт {metrics.overshoot_ms} мс{cpu}{qos}')
 
     def _seek_done(self, replay_position: int) -> None:
         game_start = self.report.game_start_ms if self.report else 0
@@ -2440,6 +2560,15 @@ class ReplayLabWindow(QMainWindow):
         friendly = replacements.get(message, friendly)
         self.seek_status.setText(friendly)
         QMessageBox.warning(self, 'Replay Seeker', friendly)
+
+    def _seeker_soft_error(self, message: str) -> None:
+        if self._auto_attach_pid is not None and time.monotonic() < self._auto_attach_deadline:
+            self.seek_status.setText('Warcraft ещё готовит replay · повторяю подключение…')
+            if self._pending_backward_seek is None:
+                QTimer.singleShot(750, self._auto_attach_seeker)
+            return
+        self._auto_attach_pid = None
+        self.seek_status.setText(f'Instant Seek пока не готов: {message}')
 
     def export_json(self) -> None:
         if self.report is None or self.current_path is None:

@@ -29,6 +29,11 @@ class AttachResult:
     build_profile: str = ''
     game_dll_match: str = ''
     game_dll_sha256: str = ''
+    attach_duration_ms: float = 0.0
+    binary_validation_ms: float = 0.0
+    replay_scan_ms: float = 0.0
+    validation_cache_hit: bool = False
+    replay_scan_strategy: str = ''
 
 @dataclass(frozen=True)
 class ProcessAttachResult:
@@ -38,12 +43,34 @@ class ProcessAttachResult:
     build_profile: str
     game_dll_match: str
     game_dll_sha256: str
+    binary_validation_ms: float = 0.0
+    validation_cache_hit: bool = False
 
 @dataclass(frozen=True)
 class SeekProgress:
     current_replay_time_ms: int
     target_replay_time_ms: int
     speed_value: int
+    stage: str = 'cruise'
+    effective_speed: float = 0.0
+    eta_seconds: float | None = None
+    process_cpu_percent: float | None = None
+    command_latency_ms: float = 0.0
+    first_advance_ms: float | None = None
+
+@dataclass(frozen=True)
+class SeekMetrics:
+    start_replay_time_ms: int
+    final_replay_time_ms: int
+    target_replay_time_ms: int
+    wall_duration_ms: float
+    command_latency_ms: float
+    first_advance_ms: float | None
+    effective_speed: float
+    process_cpu_percent: float | None
+    overshoot_ms: int
+    profile_key: str
+    high_qos_applied: bool
 
 @dataclass(frozen=True)
 class CameraState:
@@ -74,7 +101,13 @@ class SeekProfile:
     maximum_speed: int
     far_poll_seconds: float
     lower_process_priority: bool
-SEEK_PROFILES = {'gentle': SeekProfile(key='gentle', label='Бережный · до 16x', maximum_speed=16, far_poll_seconds=0.16, lower_process_priority=True), 'balanced': SeekProfile(key='balanced', label='Сбалансированный · до 32x', maximum_speed=32, far_poll_seconds=0.1, lower_process_priority=True), 'turbo': SeekProfile(key='turbo', label='Турбо · максимум', maximum_speed=65535, far_poll_seconds=0.06, lower_process_priority=False)}
+    power_mode: str
+    high_qos: bool = False
+SEEK_PROFILES = {'gentle': SeekProfile(key='gentle', label='Eco · до 16x', maximum_speed=16, far_poll_seconds=0.2, lower_process_priority=True, power_mode='eco'), 'balanced': SeekProfile(key='balanced', label='Balanced · до 32x', maximum_speed=32, far_poll_seconds=0.12, lower_process_priority=True, power_mode='balanced'), 'turbo': SeekProfile(key='turbo', label='Maximum · максимум', maximum_speed=65535, far_poll_seconds=0.05, lower_process_priority=False, power_mode='maximum', high_qos=True)}
+_BINARY_VALIDATION_CACHE: dict[tuple[tuple[object, ...], tuple[object, ...]], tuple[Path, GameDllMatch]] = {}
+_BINARY_VALIDATION_CACHE_LOCK = threading.Lock()
+_REPLAY_BLOCK_HINTS: dict[tuple[int, int], int] = {}
+_REPLAY_BLOCK_HINTS_LOCK = threading.Lock()
 
 class Warcraft126MemoryBackend:
     EXPECTED_WAR3_SHA256 = WARCRAFT_126A_WAR3_SHA256
@@ -93,6 +126,9 @@ class Warcraft126MemoryBackend:
     PROCESS_VM_READ = 16
     PROCESS_VM_WRITE = 32
     BELOW_NORMAL_PRIORITY_CLASS = 16384
+    PROCESS_POWER_THROTTLING = 4
+    PROCESS_POWER_THROTTLING_CURRENT_VERSION = 1
+    PROCESS_POWER_THROTTLING_EXECUTION_SPEED = 1
     TH32CS_SNAPPROCESS = 2
     TH32CS_SNAPMODULE = 8
     TH32CS_SNAPMODULE32 = 16
@@ -131,6 +167,7 @@ class Warcraft126MemoryBackend:
         self._kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
         self._handle: int | None = None
         self._pid: int | None = None
+        self._process_creation_ticks: int | None = None
         self._process_path: Path | None = None
         self._game_dll_base: int | None = None
         self._game_dll_match: GameDllMatch | None = None
@@ -141,6 +178,9 @@ class Warcraft126MemoryBackend:
         self._hero_cache: dict[tuple[int, str], int] = {}
         self._hero_cache_lock = threading.Lock()
         self._lock = threading.RLock()
+        self._last_replay_scan_strategy = ''
+        self._last_seek_metrics: SeekMetrics | None = None
+        self._set_process_information: object | None = None
         self._configure_winapi()
 
     def _configure_winapi(self) -> None:
@@ -161,6 +201,16 @@ class Warcraft126MemoryBackend:
         kernel32.GetPriorityClass.restype = wintypes.DWORD
         kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
         kernel32.SetPriorityClass.restype = wintypes.BOOL
+        kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME)]
+        kernel32.GetProcessTimes.restype = wintypes.BOOL
+        try:
+            set_process_information = kernel32.SetProcessInformation
+        except AttributeError:
+            self._set_process_information = None
+        else:
+            set_process_information.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+            set_process_information.restype = wintypes.BOOL
+            self._set_process_information = set_process_information
 
     @property
     def attached(self) -> bool:
@@ -182,6 +232,10 @@ class Warcraft126MemoryBackend:
             raise SeekBackendError('Warcraft process is not open')
         return self._pid
 
+    @property
+    def last_seek_metrics(self) -> SeekMetrics | None:
+        return self._last_seek_metrics
+
     @staticmethod
     def _sha256(path: Path) -> str:
         digest = hashlib.sha256()
@@ -190,12 +244,67 @@ class Warcraft126MemoryBackend:
                 digest.update(chunk)
         return digest.hexdigest().upper()
 
+    @staticmethod
+    def _file_identity(path: Path) -> tuple[object, ...]:
+        resolved = path.resolve()
+        stat = resolved.stat()
+        return (str(resolved).casefold(), int(stat.st_dev), int(stat.st_ino), int(stat.st_size), int(stat.st_mtime_ns))
+
     def _open_process(self, pid: int, access: int) -> int:
         handle = self._kernel32.OpenProcess(access, False, pid)
         if not handle:
             error = ctypes.get_last_error()
             raise SeekBackendError(f'Cannot open war3.exe process {pid} (WinError {error})')
         return int(handle)
+
+    @staticmethod
+    def _filetime_ticks(value: wintypes.FILETIME) -> int:
+        return int(value.dwHighDateTime) << 32 | int(value.dwLowDateTime)
+
+    def _process_times(self, handle: int | None=None) -> tuple[int, float]:
+        process_handle = handle if handle is not None else self._handle
+        if process_handle is None:
+            raise SeekBackendError('Warcraft process is not open')
+        creation = wintypes.FILETIME()
+        exit_time = wintypes.FILETIME()
+        kernel = wintypes.FILETIME()
+        user = wintypes.FILETIME()
+        if not self._kernel32.GetProcessTimes(process_handle, ctypes.byref(creation), ctypes.byref(exit_time), ctypes.byref(kernel), ctypes.byref(user)):
+            error = ctypes.get_last_error()
+            raise SeekBackendError(f'Cannot query Warcraft process time (WinError {error})')
+        cpu_seconds = (self._filetime_ticks(kernel) + self._filetime_ticks(user)) / 10000000.0
+        return (self._filetime_ticks(creation), cpu_seconds)
+
+    def _process_cpu_seconds(self) -> float | None:
+        try:
+            return self._process_times()[1]
+        except (AttributeError, SeekBackendError):
+            return None
+
+    def _set_high_qos(self, enabled: bool) -> bool:
+        set_process_information = getattr(self, '_set_process_information', None)
+        if set_process_information is None or getattr(self, '_pid', None) is None:
+            return False
+
+        class PROCESS_POWER_THROTTLING_STATE(ctypes.Structure):
+            _fields_ = [('Version', wintypes.DWORD), ('ControlMask', wintypes.DWORD), ('StateMask', wintypes.DWORD)]
+        access = self.PROCESS_QUERY_INFORMATION | self.PROCESS_SET_INFORMATION
+        try:
+            handle = self._open_process(self._pid, access)
+        except SeekBackendError:
+            return False
+        try:
+            state = PROCESS_POWER_THROTTLING_STATE()
+            state.Version = self.PROCESS_POWER_THROTTLING_CURRENT_VERSION
+            if enabled:
+                state.ControlMask = self.PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+                state.StateMask = 0
+            else:
+                state.ControlMask = 0
+                state.StateMask = 0
+            return bool(set_process_information(handle, self.PROCESS_POWER_THROTTLING, ctypes.byref(state), ctypes.sizeof(state)))
+        finally:
+            self._kernel32.CloseHandle(handle)
 
     def _query_process_path(self, pid: int) -> Path:
         handle = self._open_process(pid, self.PROCESS_QUERY_LIMITED_INFORMATION)
@@ -269,10 +378,15 @@ class Warcraft126MemoryBackend:
             self._kernel32.CloseHandle(snapshot)
         raise SeekBackendError(f'{module_name} is not loaded in Warcraft')
 
-    def _validate_binaries(self, process_path: Path) -> tuple[Path, GameDllMatch]:
+    def _validate_binaries(self, process_path: Path) -> tuple[Path, GameDllMatch, bool]:
         game_dll = process_path.with_name('Game.dll')
         if not game_dll.is_file():
             raise SeekBackendError(f'Game.dll was not found next to {process_path}')
+        cache_key = (self._file_identity(process_path), self._file_identity(game_dll))
+        with _BINARY_VALIDATION_CACHE_LOCK:
+            cached = _BINARY_VALIDATION_CACHE.get(cache_key)
+        if cached is not None:
+            return (cached[0], cached[1], True)
         war3_hash = self._sha256(process_path)
         if war3_hash != self.EXPECTED_WAR3_SHA256:
             raise SeekBackendError('war3.exe does not match the locked Warcraft 1.26a build')
@@ -280,7 +394,11 @@ class Warcraft126MemoryBackend:
             game_match = match_game_dll(game_dll)
         except (OSError, WarcraftBuildError) as exc:
             raise SeekBackendError(str(exc)) from exc
-        return (game_dll, game_match)
+        with _BINARY_VALIDATION_CACHE_LOCK:
+            _BINARY_VALIDATION_CACHE[cache_key] = (game_dll, game_match)
+            while len(_BINARY_VALIDATION_CACHE) > 8:
+                _BINARY_VALIDATION_CACHE.pop(next(iter(_BINARY_VALIDATION_CACHE)))
+        return (game_dll, game_match, False)
 
     def _read(self, address: int, size: int) -> bytes:
         if self._handle is None:
@@ -563,8 +681,10 @@ class Warcraft126MemoryBackend:
             _fields_ = [('BaseAddress', wintypes.LPVOID), ('AllocationBase', wintypes.LPVOID), ('AllocationProtect', wintypes.DWORD), ('PartitionId', wintypes.WORD), ('RegionSize', ctypes.c_size_t), ('State', wintypes.DWORD), ('Protect', wintypes.DWORD), ('Type', wintypes.DWORD)]
         if self._handle is None:
             raise SeekBackendError('Warcraft process is not open')
+        self._last_replay_scan_strategy = ''
         address = 65536
         signature = struct.pack('<I', self.STATUS_LOOP)
+        checked_allocation_bases: set[int] = set()
         while address < self.MAX_32BIT_ADDRESS:
             if cancel is not None and cancel.is_set():
                 raise SeekCancelled('Replay scan was cancelled')
@@ -580,6 +700,12 @@ class Warcraft126MemoryBackend:
                 continue
             readable = info.State == self.MEM_COMMIT and (not info.Protect & self.PAGE_GUARD) and (not info.Protect & self.PAGE_NOACCESS)
             if readable:
+                allocation_base = int(info.AllocationBase or 0)
+                if allocation_base not in checked_allocation_bases and allocation_base >= 65536:
+                    checked_allocation_bases.add(allocation_base)
+                    if self._validate_replay_block(allocation_base):
+                        self._last_replay_scan_strategy = 'allocation-base'
+                        return allocation_base
                 chunk_start = region_base
                 region_end = min(region_base + region_size, self.MAX_32BIT_ADDRESS)
                 overlap = b''
@@ -598,6 +724,7 @@ class Warcraft126MemoryBackend:
                             status_address = chunk_start - len(overlap) + index
                             candidate = status_address - self.STATUS_CODE_OFFSET
                             if self._validate_replay_block(candidate):
+                                self._last_replay_scan_strategy = 'memory-scan'
                                 return candidate
                             search_from = index + 1
                         overlap = haystack[-3:]
@@ -611,7 +738,9 @@ class Warcraft126MemoryBackend:
 
     def _attach_process_id(self, pid: int) -> ProcessAttachResult:
         process_path = self._query_process_path(pid)
-        game_dll, game_match = self._validate_binaries(process_path)
+        validation_started = time.monotonic()
+        game_dll, game_match, cache_hit = self._validate_binaries(process_path)
+        binary_validation_ms = (time.monotonic() - validation_started) * 1000.0
         access = self.PROCESS_QUERY_INFORMATION | self.PROCESS_VM_OPERATION | self.PROCESS_VM_READ | self.PROCESS_VM_WRITE
         handle = self._open_process(pid, access)
         try:
@@ -621,15 +750,16 @@ class Warcraft126MemoryBackend:
             raise
         self._handle = handle
         self._pid = pid
+        self._process_creation_ticks = self._process_times(handle)[0]
         self._process_path = process_path
         self._game_dll_match = game_match
         self._game_dll_base = game_dll_base
-        return ProcessAttachResult(pid=pid, executable=str(process_path), game_dll=str(game_dll), build_profile=game_match.profile_label, game_dll_match=game_match.match_kind, game_dll_sha256=game_match.sha256)
+        return ProcessAttachResult(pid=pid, executable=str(process_path), game_dll=str(game_dll), build_profile=game_match.profile_label, game_dll_match=game_match.match_kind, game_dll_sha256=game_match.sha256, binary_validation_ms=binary_validation_ms, validation_cache_hit=cache_hit)
 
-    def attach_process(self) -> ProcessAttachResult:
+    def attach_process(self, pid: int | None=None) -> ProcessAttachResult:
         with self._lock:
             self.close()
-            processes = self._find_war3_processes()
+            processes = [(pid, 'war3.exe')] if pid is not None else self._find_war3_processes()
             if not processes:
                 raise SeekBackendError('war3.exe is not running')
             errors: list[str] = []
@@ -641,22 +771,54 @@ class Warcraft126MemoryBackend:
                     self.close()
             raise SeekBackendError('; '.join(errors))
 
-    def attach(self, scan_progress: Callable[[float], None] | None=None, cancel: threading.Event | None=None) -> AttachResult:
+    def attach(self, scan_progress: Callable[[float], None] | None=None, cancel: threading.Event | None=None, pid: int | None=None) -> AttachResult:
         with self._lock:
+            attach_started = time.monotonic()
             self.close()
-            processes = self._find_war3_processes()
+            processes = [(pid, 'war3.exe')] if pid is not None else self._find_war3_processes()
             if not processes:
                 raise SeekBackendError('war3.exe is not running')
             errors: list[str] = []
             for pid, _ in processes:
                 try:
                     process_result = self._attach_process_id(pid)
-                    self._replay_block = self._scan_replay_block(scan_progress, cancel)
-                    return AttachResult(pid=pid, executable=process_result.executable, game_dll=process_result.game_dll, replay_block=self.replay_block, replay_position_ms=self.current_position_ms(), replay_length_ms=self.replay_length_ms(), build_profile=process_result.build_profile, game_dll_match=process_result.game_dll_match, game_dll_sha256=process_result.game_dll_sha256)
+                    replay_scan_started = time.monotonic()
+                    process_key = (self.process_id, int(self._process_creation_ticks or 0))
+                    with _REPLAY_BLOCK_HINTS_LOCK:
+                        replay_hint = _REPLAY_BLOCK_HINTS.get(process_key)
+                    if replay_hint is not None and self._validate_replay_block(replay_hint):
+                        self._replay_block = replay_hint
+                        self._last_replay_scan_strategy = 'session-cache'
+                    else:
+                        if replay_hint is not None:
+                            with _REPLAY_BLOCK_HINTS_LOCK:
+                                _REPLAY_BLOCK_HINTS.pop(process_key, None)
+                        self._replay_block = self._scan_replay_block(scan_progress, cancel)
+                        with _REPLAY_BLOCK_HINTS_LOCK:
+                            _REPLAY_BLOCK_HINTS[process_key] = self._replay_block
+                            while len(_REPLAY_BLOCK_HINTS) > 16:
+                                _REPLAY_BLOCK_HINTS.pop(next(iter(_REPLAY_BLOCK_HINTS)))
+                    replay_scan_ms = (time.monotonic() - replay_scan_started) * 1000.0
+                    return AttachResult(pid=pid, executable=process_result.executable, game_dll=process_result.game_dll, replay_block=self.replay_block, replay_position_ms=self.current_position_ms(), replay_length_ms=self.replay_length_ms(), build_profile=process_result.build_profile, game_dll_match=process_result.game_dll_match, game_dll_sha256=process_result.game_dll_sha256, attach_duration_ms=(time.monotonic() - attach_started) * 1000.0, binary_validation_ms=process_result.binary_validation_ms, replay_scan_ms=replay_scan_ms, validation_cache_hit=process_result.validation_cache_hit, replay_scan_strategy=self._last_replay_scan_strategy)
                 except SeekBackendError as exc:
                     errors.append(f'PID {pid}: {exc}')
                     self.close()
             raise SeekBackendError('; '.join(errors))
+
+    def reuse_attach(self, pid: int | None=None) -> AttachResult | None:
+        started = time.monotonic()
+        with self._lock:
+            if not self.attached:
+                return None
+            if pid is not None and pid != self.process_id:
+                return None
+            if not self._validate_replay_block(self.replay_block):
+                return None
+            process_path = self._process_path
+            game_match = self._game_dll_match
+            if process_path is None or game_match is None:
+                return None
+            return AttachResult(pid=self.process_id, executable=str(process_path), game_dll=str(process_path.with_name('Game.dll')), replay_block=self.replay_block, replay_position_ms=self.current_position_ms(), replay_length_ms=self.replay_length_ms(), build_profile=game_match.profile_label, game_dll_match=game_match.match_kind, game_dll_sha256=game_match.sha256, attach_duration_ms=(time.monotonic() - started) * 1000.0, validation_cache_hit=True, replay_scan_strategy='open-session')
 
     def close(self) -> None:
         with self._lock:
@@ -664,6 +826,7 @@ class Warcraft126MemoryBackend:
                 self._kernel32.CloseHandle(self._handle)
             self._handle = None
             self._pid = None
+            self._process_creation_ticks = None
             self._process_path = None
             self._game_dll_match = None
             self._game_dll_base = None
@@ -671,6 +834,8 @@ class Warcraft126MemoryBackend:
             self._camera_position_block = None
             self._camera_other_block = None
             self._selected_unit_pointer = None
+            self._last_replay_scan_strategy = ''
+            self._last_seek_metrics = None
             with self._hero_cache_lock:
                 self._hero_cache.clear()
 
@@ -733,25 +898,52 @@ class Warcraft126MemoryBackend:
         finally:
             self._kernel32.CloseHandle(handle)
 
-    def seek_forward(self, target_replay_time_ms: int, cancel: threading.Event, progress: Callable[[SeekProgress], None] | None=None, timeout_seconds: float=20 * 60, profile: SeekProfile | None=None) -> int:
+    def seek_forward(self, target_replay_time_ms: int, cancel: threading.Event, progress: Callable[[SeekProgress], None] | None=None, timeout_seconds: float=20 * 60, profile: SeekProfile | None=None, request_started_at: float | None=None) -> int:
         selected_profile = profile or SEEK_PROFILES['turbo']
         if target_replay_time_ms < 0:
             raise ValueError('Target replay time cannot be negative')
-        start_wall_time = time.monotonic()
+        self._last_seek_metrics = None
+        now = time.monotonic()
+        start_wall_time = request_started_at if request_started_at is not None and request_started_at <= now else now
         last_progress_time = 0.0
         previous_position = self.current_position_ms()
+        start_position = previous_position
+        start_cpu_seconds = self._process_cpu_seconds()
+        command_latency_ms = 0.0
+        first_advance_ms: float | None = None
+        high_qos_applied = False
+
+        def current_measurements(position: int, now: float) -> tuple[float, float | None, float | None]:
+            elapsed_seconds = max(now - start_wall_time, 1e-06)
+            advanced_ms = max(position - start_position, 0)
+            effective_speed = advanced_ms / (elapsed_seconds * 1000.0)
+            remaining_ms = max(target_replay_time_ms - position, 0)
+            eta_seconds = remaining_ms / (effective_speed * 1000.0) if effective_speed > 0.01 else None
+            cpu_now = self._process_cpu_seconds()
+            cpu_percent = max(cpu_now - start_cpu_seconds, 0.0) / elapsed_seconds * 100.0 if cpu_now is not None and start_cpu_seconds is not None else None
+            return (effective_speed, eta_seconds, cpu_percent)
+
+        def store_metrics(position: int, now: float) -> None:
+            effective_speed, _, cpu_percent = current_measurements(position, now)
+            self._last_seek_metrics = SeekMetrics(start_replay_time_ms=start_position, final_replay_time_ms=position, target_replay_time_ms=target_replay_time_ms, wall_duration_ms=(now - start_wall_time) * 1000.0, command_latency_ms=command_latency_ms, first_advance_ms=first_advance_ms, effective_speed=effective_speed, process_cpu_percent=cpu_percent, overshoot_ms=max(position - target_replay_time_ms, 0), profile_key=selected_profile.key, high_qos_applied=high_qos_applied)
         if target_replay_time_ms + 100 < previous_position:
             raise SeekBackendError('The target is behind the current replay position. Restart/checkpoint support is not connected yet.')
         if target_replay_time_ms - previous_position <= 100:
             self.set_paused(True)
+            store_metrics(previous_position, time.monotonic())
             return previous_position
         speed = selected_profile.maximum_speed
         previous_priority = None
         if selected_profile.lower_process_priority:
             previous_priority = self._set_temporary_priority(self.BELOW_NORMAL_PRIORITY_CLASS)
         try:
+            if selected_profile.high_qos:
+                high_qos_applied = self._set_high_qos(True)
             self.set_speed_value(speed)
             self.set_paused(False)
+            command_latency_ms = (time.monotonic() - start_wall_time) * 1000.0
+            if progress is not None:
+                progress(SeekProgress(current_replay_time_ms=previous_position, target_replay_time_ms=target_replay_time_ms, speed_value=speed, stage='starting', command_latency_ms=command_latency_ms))
             while True:
                 remaining_before_poll = target_replay_time_ms - previous_position
                 poll_seconds = 0.04 if remaining_before_poll <= 60000 else selected_profile.far_poll_seconds
@@ -764,11 +956,16 @@ class Warcraft126MemoryBackend:
                     raise SeekBackendError('Warcraft left replay mode while seeking')
                 current = self.current_position_ms()
                 remaining = target_replay_time_ms - current
+                if first_advance_ms is None and current > start_position:
+                    first_advance_ms = (now - start_wall_time) * 1000.0
+                effective_speed, eta_seconds, cpu_percent = current_measurements(current, now)
                 if progress is not None and (now - last_progress_time >= 0.15 or remaining <= 1500):
-                    progress(SeekProgress(current_replay_time_ms=current, target_replay_time_ms=target_replay_time_ms, speed_value=speed))
+                    stage = 'starting' if first_advance_ms is None else 'braking' if speed < selected_profile.maximum_speed or remaining <= 60000 else 'cruise'
+                    progress(SeekProgress(current_replay_time_ms=current, target_replay_time_ms=target_replay_time_ms, speed_value=speed, stage=stage, effective_speed=effective_speed, eta_seconds=eta_seconds, process_cpu_percent=cpu_percent, command_latency_ms=command_latency_ms, first_advance_ms=first_advance_ms))
                     last_progress_time = now
                 if remaining <= 100:
                     self.set_paused(True)
+                    store_metrics(current, now)
                     return current
                 delta = max(current - previous_position, 1)
                 previous_position = current
@@ -787,11 +984,18 @@ class Warcraft126MemoryBackend:
                     speed = desired_speed
                     self.set_speed_value(speed)
         finally:
+            if self._last_seek_metrics is None:
+                try:
+                    store_metrics(self.current_position_ms(), time.monotonic())
+                except SeekBackendError:
+                    pass
             try:
                 self.set_speed_value(1)
                 self.set_paused(True)
             except SeekBackendError:
                 pass
+            if high_qos_applied:
+                self._set_high_qos(False)
             self._restore_priority(previous_priority)
 
     def __enter__(self) -> Warcraft126MemoryBackend:

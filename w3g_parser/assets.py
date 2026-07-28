@@ -5,7 +5,7 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 HERO_ALIASES = {'Stealth Assassin': 'Stealth Assasin', 'Lightning Revenant': 'Lighting Revenant'}
-ITEM_ALIASES = {'Blink Dagger': 'Kelens Dagger of Escape', "Kelen's Dagger": 'Kelens Dagger of Escape', 'Boots of Travel Level 1': 'Boots of Travel', 'Boots of Travel Level 2': 'Boots of Travel 2', 'Magical Bottle - 3/3': 'Empty Bottle', 'Magical Bottle - 2/3': 'Empty Bottle', 'Magical Bottle - 1/3': 'Empty Bottle', 'Observer and Sentry Wards': 'Observer Wards', 'Sentry and Observer Wards': 'Sentry Wards', "Vladmir's Offering": 'Vladimirs Offering', 'Gauntlets of Strength': 'Gauntlets of Ogre Strength', 'Cranium Basher Recipe': 'Recipe Scroll', "Shiva's Guard Recipe": 'Recipe Scroll'}
+ITEM_ALIASES = {'Blink Dagger': 'Kelens Dagger of Escape', "Kelen's Dagger": 'Kelens Dagger of Escape', 'Boots of Travel Level 1': 'Boots of Travel', 'Boots of Travel Level 2': 'Boots of Travel 2', 'Magical Bottle - 3/3': 'Empty Bottle', 'Magical Bottle - 2/3': 'Empty Bottle', 'Magical Bottle - 1/3': 'Empty Bottle', 'Observer and Sentry Wards': 'Observer Wards', 'Sentry and Observer Wards': 'Sentry Wards', "Vladmir's Offering": 'Vladimirs Offering', 'Gauntlets of Strength': 'Gauntlets of Ogre Strength', 'Cranium Basher Recipe': 'Recipe Scroll', "Shiva's Guard Recipe": 'Recipe Scroll', 'Soul Ring Recipe': 'Recipe Scroll'}
 
 def project_root() -> Path:
     frozen_root = getattr(sys, '_MEIPASS', None)

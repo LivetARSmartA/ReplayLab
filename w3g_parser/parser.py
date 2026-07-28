@@ -163,6 +163,8 @@ class DotaPlayer:
     creep_kills: int | None = None
     creep_denies: int | None = None
     neutral_kills: int | None = None
+    creep_stats_source: str | None = None
+    creep_stats_game_time_ms: int | None = None
     final_gold: int | None = None
     inventory_value: int | None = None
     tower_kills: int | None = None
@@ -580,6 +582,7 @@ def _parse_timeline(data: bytes, offset: int, report: ReplayReport) -> None:
 MULTI_KILL_WINDOW_MS = 18000
 MULTI_KILL_LABELS = {2: 'Double Kill', 3: 'Triple Kill', 4: 'Ultra Kill'}
 FINAL_STAT_KEYS = {'0': 'level', '1': 'kills', '2': 'deaths', '3': 'creep_kills', '4': 'creep_denies', '5': 'assists', '6': 'final_gold', '7': 'neutral_kills'}
+LIVE_CREEP_STAT_KEYS = {'CSK': 'creep_kills', 'CSD': 'creep_denies', 'NK': 'neutral_kills'}
 
 def _latest_sync(report: ReplayReport, mission_key: str, key: str) -> GameCacheSync | None:
     matches = [event for event in report.gamecache_syncs if event.cache_name == 'dr.x' and event.mission_key == mission_key and (event.key == key)]
@@ -589,6 +592,19 @@ def _rawcode_from_sync(event: GameCacheSync | None) -> str | None:
     if event is None or event.value_ascii is None or len(event.value_ascii) != 4:
         return None
     return event.value_ascii[::-1]
+
+def _apply_live_creep_stat_fallback(report: ReplayReport, player: DotaPlayer) -> None:
+    fallback_times: list[int] = []
+    for key_prefix, attribute in LIVE_CREEP_STAT_KEYS.items():
+        if getattr(player, attribute) is not None:
+            continue
+        event = _latest_sync(report, 'Data', f'{key_prefix}{player.slot}')
+        if event is not None:
+            setattr(player, attribute, event.value_i32)
+            fallback_times.append(event.time_ms)
+    if fallback_times:
+        player.creep_stats_source = 'periodic-snapshot'
+        player.creep_stats_game_time_ms = max(max(fallback_times) - (report.game_start_ms or 0), 0)
 
 def _peak_apm_60s(times: list[int]) -> tuple[int, int | None]:
     if not times:
@@ -687,10 +703,17 @@ def _derive_dota_events(report: ReplayReport) -> None:
     slot_by_network_id = {player.network_player_id: player.slot for player in report.dota_players}
     for dota_player in report.dota_players:
         mission_key = str(dota_player.slot)
+        final_creep_times: list[int] = []
         for key, attribute in FINAL_STAT_KEYS.items():
             event = _latest_sync(report, mission_key, key)
             if event is not None:
                 setattr(dota_player, attribute, event.value_i32)
+                if attribute in {'creep_kills', 'creep_denies', 'neutral_kills'}:
+                    final_creep_times.append(event.time_ms)
+        if final_creep_times:
+            dota_player.creep_stats_source = 'final'
+            dota_player.creep_stats_game_time_ms = max(max(final_creep_times) - game_start, 0)
+        _apply_live_creep_stat_fallback(report, dota_player)
         dota_player.final_item_rawcodes = [_rawcode_from_sync(_latest_sync(report, mission_key, f'8_{index}')) for index in range(6)]
         item_definitions = [get_item_definition(rawcode) for rawcode in dota_player.final_item_rawcodes]
         dota_player.final_item_names = [definition.name if definition is not None else None for definition in item_definitions]

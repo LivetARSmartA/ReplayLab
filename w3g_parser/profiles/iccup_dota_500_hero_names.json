@@ -1,0 +1,1219 @@
+{
+  "profile": "iCCup DotA 500 hero rawcode and icon catalog",
+  "map_sha256": "8d693142a9137d7c2db9bea09690765ff931a83e5e8168c2929a336c16c66b9a",
+  "selection": "UnitBalance hero entries stocked as selectable heroes; names and art are resolved from the protected map string table.",
+  "hero_rawcode_count": 151,
+  "hero_name_count": 112,
+  "icon_coverage": 151,
+  "heroes": {
+    "E002": {
+      "name": "Lightning Revenant",
+      "map_name": "Lightning Revenant",
+      "map_tip": "Lightning Revenant",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNRevenant.blp",
+      "icon_path": "iccup/heroes/lighting_revenant.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E004": {
+      "name": "Bone Fletcher",
+      "map_name": "Bone Fletcher",
+      "map_tip": "Bone Fletcher",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSkeletonMage.blp",
+      "icon_path": "iccup/heroes/bone_fletcher.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E005": {
+      "name": "Moon Rider",
+      "map_name": "Moon Rider",
+      "map_tip": "Moon Rider",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHuntress.blp",
+      "icon_path": "iccup/heroes/moon_rider.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E00P": {
+      "name": "Twin Head Dragon",
+      "map_name": "Twin Head Dragon",
+      "map_tip": "Twin Head Dragon",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNChimaera.blp",
+      "icon_path": "iccup/heroes/twin_head_dragon.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E01A": {
+      "name": "Witch Doctor",
+      "map_name": "Witch Doctor",
+      "map_tip": "Witch Doctor",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNWitchDoctor.blp",
+      "icon_path": "iccup/heroes/witch_doctor.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E01B": {
+      "name": "Spectre",
+      "map_name": "Spectre",
+      "map_tip": "Spectre",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNvengeanceincarnate.blp",
+      "icon_path": "iccup/heroes/spectre.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E01C": {
+      "name": "Warlock",
+      "map_name": "Warlock",
+      "map_tip": "Warlock",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGuldan.blp",
+      "icon_path": "iccup/heroes/warlock.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E01Y": {
+      "name": "Templar Assassin",
+      "map_name": "Templar Assassin",
+      "map_tip": "Templar Assassin",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNAssassin.blp",
+      "icon_path": "iccup/heroes/templar_assassin.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E02F": {
+      "name": "Phoenix",
+      "map_name": "Phoenix",
+      "map_tip": "Phoenix",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNPhoenix.blp",
+      "icon_path": "iccup/heroes/phoenix.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E02G": {
+      "name": "Phoenix",
+      "map_name": "Phoenix",
+      "map_tip": "Phoenix",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNMarkOfFire.blp",
+      "icon_path": "iccup/heroes/phoenix.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E02H": {
+      "name": "Shadow Demon",
+      "map_name": "Shadow Demon",
+      "map_tip": "Shadow Demon",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNArchimonde.blp",
+      "icon_path": "iccup/heroes/shadow_demon.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E02I": {
+      "name": "Ymir",
+      "map_name": "Tuskarr",
+      "map_tip": "Tuskarr",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNTuskaarBrown.blp",
+      "icon_path": "iccup/heroes/ymir.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E02J": {
+      "name": "Disruptor",
+      "map_name": "Disruptor",
+      "map_tip": "Disruptor",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNThrall.blp",
+      "icon_path": "iccup/heroes/disruptor.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E02K": {
+      "name": "Legion Commander",
+      "map_name": "Legion Commander",
+      "map_tip": "Legion Commander",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGarithos.blp",
+      "icon_path": "iccup/heroes/legion_commander.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E02N": {
+      "name": "Gyrocopter",
+      "map_name": "Gyrocopter",
+      "map_tip": "Gyrocopter",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFlyingMachine.blp",
+      "icon_path": "iccup/heroes/gyrocopter.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E02O": {
+      "name": "Gyrocopter",
+      "map_name": "Gyrocopter",
+      "map_tip": "Gyrocopter",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFlyingMachine.blp",
+      "icon_path": "iccup/heroes/gyrocopter.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E02X": {
+      "name": "Grand Magus",
+      "map_name": "Grand Magus",
+      "map_tip": "Grand Magus",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNMedivh.blp",
+      "icon_path": "iccup/heroes/grand_magus.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "E032": {
+      "name": "Goblin Shredder",
+      "map_name": "Goblin Shredder",
+      "map_tip": "Goblin Shredder",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNJunkGolem.blp",
+      "icon_path": "iccup/heroes/goblin_shredder.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "EC45": {
+      "name": "Faceless Void",
+      "map_name": "Faceless Void",
+      "map_tip": "Faceless Void",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFacelessOne.blp",
+      "icon_path": "iccup/heroes/faceless_void.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "EC57": {
+      "name": "Venomancer",
+      "map_name": "Venomancer",
+      "map_tip": "Venomancer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHydralisk.blp",
+      "icon_path": "iccup/heroes/venomancer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "EC77": {
+      "name": "Netherdrake",
+      "map_name": "Netherdrake",
+      "map_tip": "Viper",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNNetherDragon.blp",
+      "icon_path": "iccup/heroes/netherdrake.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Edem": {
+      "name": "Anti-Mage",
+      "map_name": "Anti-Mage",
+      "map_tip": "Anti-Mage",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroDemonHunter.blp",
+      "icon_path": "iccup/heroes/anti_mage.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Eevi": {
+      "name": "Soul Keeper",
+      "map_name": "Soul Keeper",
+      "map_tip": "Soul Keeper",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNEvilIllidan.blp",
+      "icon_path": "iccup/heroes/soul_keeper.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Ekee": {
+      "name": "Tormented Soul",
+      "map_name": "Tormented Soul",
+      "map_tip": "Tormented Soul",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNKeeperGhostBlue.blp",
+      "icon_path": "iccup/heroes/tormented_soul.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Emns": {
+      "name": "Prophet",
+      "map_name": "Prophet",
+      "map_tip": "Prophet",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFurion.blp",
+      "icon_path": "iccup/heroes/prophet.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Emoo": {
+      "name": "Enchantress",
+      "map_name": "Enchantress",
+      "map_tip": "Enchantress",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNDryad.blp",
+      "icon_path": "iccup/heroes/enchantress.jpg",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Ewar": {
+      "name": "Phantom Assassin",
+      "map_name": "Phantom Assassin",
+      "map_tip": "Phantom Assassin",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroWarden.blp",
+      "icon_path": "iccup/heroes/phantom_assassin.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H000": {
+      "name": "Centaur Warchief",
+      "map_name": "Centaur Warchief",
+      "map_tip": "Centaur Warchief",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNCentaurKhan.blp",
+      "icon_path": "iccup/heroes/centaur_warchief.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H001": {
+      "name": "Rogue Knight",
+      "map_name": "Rogue Knight",
+      "map_tip": "Rogue Knight",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFelGuardBlue.tga",
+      "icon_path": "iccup/heroes/rogue_knight.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H004": {
+      "name": "Slayer",
+      "map_name": "Slayer",
+      "map_tip": "Slayer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSorceress.blp",
+      "icon_path": "iccup/heroes/slayer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H008": {
+      "name": "Bristleback",
+      "map_name": "Bristleback",
+      "map_tip": "Bristleback",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNRazorback.blp",
+      "icon_path": "iccup/heroes/bristleback.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00A": {
+      "name": "Holy Knight",
+      "map_name": "Holy Knight",
+      "map_tip": "Holy Knight",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroFarseer.blp",
+      "icon_path": "iccup/heroes/holy_knight.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00D": {
+      "name": "Beastmaster",
+      "map_name": "Beastmaster",
+      "map_tip": "Beastmaster",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNBeastMaster.blp",
+      "icon_path": "iccup/heroes/beastmaster.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00H": {
+      "name": "Oblivion",
+      "map_name": "Oblivion",
+      "map_tip": "Oblivion",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNPugna.BLP",
+      "icon_path": "iccup/heroes/oblivion.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00I": {
+      "name": "Geomancer",
+      "map_name": "Geomancer",
+      "map_tip": "Geomancer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNKoboldGeomancer.blp",
+      "icon_path": "iccup/heroes/geomancer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00J": {
+      "name": "Geomancer",
+      "map_name": "Geomancer",
+      "map_tip": "Geomancer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNKoboldGeomancer.blp",
+      "icon_path": "iccup/heroes/geomancer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00K": {
+      "name": "Goblin Techies",
+      "map_name": "Goblin Techies",
+      "map_tip": "Goblin Techies",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGoblinSapper.blp",
+      "icon_path": "iccup/heroes/goblin_techies.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00N": {
+      "name": "Dark Seer",
+      "map_name": "Dark Seer",
+      "map_tip": "Dark Seer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNDranaiMage.blp",
+      "icon_path": "iccup/heroes/dark_seer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00Q": {
+      "name": "Sacred Warrior",
+      "map_name": "Sacred Warrior",
+      "map_tip": "Sacred Warrior",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeadHunterBerserker.blp",
+      "icon_path": "iccup/heroes/sacred_warrior.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00R": {
+      "name": "Undying",
+      "map_name": "Undying",
+      "map_tip": "Undying",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNZombie.blp",
+      "icon_path": "iccup/heroes/undying.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00S": {
+      "name": "Storm Spirit",
+      "map_name": "Storm Spirit",
+      "map_tip": "Storm Spirit",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNStorm.blp",
+      "icon_path": "iccup/heroes/storm_spirit.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00T": {
+      "name": "Clockwerk Goblin",
+      "map_name": "Clockwerk Goblin",
+      "map_tip": "Clockwerk Goblin",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNClockWerkGoblin.blp",
+      "icon_path": "iccup/heroes/clockwerk_goblin.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00U": {
+      "name": "Invoker",
+      "map_name": "Invoker",
+      "map_tip": "Invoker",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroBloodElfPrince.blp",
+      "icon_path": "iccup/heroes/invoker.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H00V": {
+      "name": "Gorgon",
+      "map_name": "Gorgon",
+      "map_tip": "Medusa",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNNagaSeaWitch.blp",
+      "icon_path": "iccup/heroes/gorgon.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H06S": {
+      "name": "Admiral",
+      "map_name": "Admiral",
+      "map_tip": "Admiral",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNProudmoore.blp",
+      "icon_path": "iccup/heroes/admiral.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H06W": {
+      "name": "Keeper of the Light",
+      "map_name": "Keeper of the Light",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGhostMage.blp",
+      "icon_path": "iccup/heroes/keeper_of_the_light.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H06X": {
+      "name": "Keeper of the Light",
+      "map_name": "Keeper of the Light",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGhostMage.blp",
+      "icon_path": "iccup/heroes/keeper_of_the_light.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H06Y": {
+      "name": "Keeper of the Light",
+      "map_name": "Keeper of the Light",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGhostMage.blp",
+      "icon_path": "iccup/heroes/keeper_of_the_light.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H071": {
+      "name": "Murloc Nightcrawler",
+      "map_name": "Murloc Nightcrawler",
+      "map_tip": "Murloc Nightcrawler",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNMurgulShadowCaster.blp",
+      "icon_path": "iccup/heroes/murloc_nightcrawler.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H07G": {
+      "name": "Storm Spirit",
+      "map_name": "Storm Spirit",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNINV_Misc_Gem_Bloodstone_02.blp",
+      "icon_path": "iccup/heroes/storm_spirit.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H07I": {
+      "name": "Undying",
+      "map_name": "Flesh Golem",
+      "map_tip": "Undying",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFleshGolem.blp",
+      "icon_path": "iccup/heroes/undying.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H084": {
+      "name": "Gorgon",
+      "map_name": "Gorgon",
+      "map_tip": "Medusa",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNNagaSeaWitch.blp",
+      "icon_path": "iccup/heroes/gorgon.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H08B": {
+      "name": "Gorgon",
+      "map_name": "Gorgon",
+      "map_tip": "Medusa",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNNagaSeaWitch.blp",
+      "icon_path": "iccup/heroes/gorgon.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H08C": {
+      "name": "Gorgon",
+      "map_name": "Gorgon",
+      "map_tip": "Medusa",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNNagaSeaWitch.blp",
+      "icon_path": "iccup/heroes/gorgon.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H08D": {
+      "name": "Gorgon",
+      "map_name": "Gorgon",
+      "map_tip": "Medusa",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNNagaSeaWitch.blp",
+      "icon_path": "iccup/heroes/gorgon.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H0BC": {
+      "name": "Keeper of the Light",
+      "map_name": "Keeper of the Light",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGhostMage.blp",
+      "icon_path": "iccup/heroes/keeper_of_the_light.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H0CQ": {
+      "name": "Rogue Knight",
+      "map_name": "Rogue Knight",
+      "map_tip": "Rogue Knight",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFelGuardBlue.tga",
+      "icon_path": "iccup/heroes/rogue_knight.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H0DO": {
+      "name": "Skywrath Mage",
+      "map_name": "Skywrath Mage",
+      "map_tip": "Skywrath Mage",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNDragonHawk.blp",
+      "icon_path": "iccup/heroes/skywrath_mage.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "H0ER": {
+      "name": "Murloc Nightcrawler",
+      "map_name": "Murloc Nightcrawler",
+      "map_tip": "Murloc Nightcrawler",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNMurgulShadowCaster.blp",
+      "icon_path": "iccup/heroes/murloc_nightcrawler.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "HC49": {
+      "name": "Naga Siren",
+      "map_name": "Naga Siren",
+      "map_tip": "Naga Siren",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSeaWitch.blp",
+      "icon_path": "iccup/heroes/naga_siren.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "HC92": {
+      "name": "Stealth Assassin",
+      "map_name": "Stealth Assassin",
+      "map_tip": "Stealth Assassin",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSatyrTrickster.blp",
+      "icon_path": "iccup/heroes/stealth_assasin.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Hamg": {
+      "name": "Treant Protector",
+      "map_name": "Treant Protector",
+      "map_tip": "Treant Protector",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNTreant.blp",
+      "icon_path": "iccup/heroes/treant_protector.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Harf": {
+      "name": "Omniknight",
+      "map_name": "Omniknight",
+      "map_tip": "Omniknight",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNArthas.blp",
+      "icon_path": "iccup/heroes/omniknight.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Hblm": {
+      "name": "Keeper of the Light",
+      "map_name": "Keeper of the Light",
+      "map_tip": "Keeper of the Light",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroArchMage.blp",
+      "icon_path": "iccup/heroes/keeper_of_the_light.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Hjai": {
+      "name": "Crystal Maiden",
+      "map_name": "Crystal Maiden",
+      "map_tip": "Crystal Maiden",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNJaina.blp",
+      "icon_path": "iccup/heroes/crystal_maiden.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Hlgr": {
+      "name": "Dragon Knight",
+      "map_name": "Dragon Knight",
+      "map_tip": "Dragon Knight",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNTheCaptain.blp",
+      "icon_path": "iccup/heroes/dragon_knight.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Hmbr": {
+      "name": "Lord of Olympia",
+      "map_name": "Lord of Olympus",
+      "map_tip": "Lord of Olympus",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNAvatar.blp",
+      "icon_path": "iccup/heroes/lord_of_olympia.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Hmkg": {
+      "name": "Ogre Magi",
+      "map_name": "Ogre Magi",
+      "map_tip": "Ogre Magi",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNOgreMagi.blp",
+      "icon_path": "iccup/heroes/ogre_magi.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Huth": {
+      "name": "Ursa Warrior",
+      "map_name": "Ursa Warrior",
+      "map_tip": "Ursa Warrior",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFurbolgTracker.blp",
+      "icon_path": "iccup/heroes/ursa_warrior.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Hvsh": {
+      "name": "Bloodseeker",
+      "map_name": "Bloodseeker",
+      "map_tip": "Bloodseeker",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNShaman.blp",
+      "icon_path": "iccup/heroes/bloodseeker.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Hvwd": {
+      "name": "Vengeful Spirit",
+      "map_name": "Vengeful Spirit",
+      "map_tip": "Vengeful Spirit",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNAvengingWatcher.blp",
+      "icon_path": "iccup/heroes/vengeful_spirit.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N00B": {
+      "name": "Faerie Dragon",
+      "map_name": "Faerie Dragon",
+      "map_tip": "Faerie Dragon ",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFaerieDragon.blp",
+      "icon_path": "iccup/heroes/faerie_dragon.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N00R": {
+      "name": "Pit Lord",
+      "map_name": "Pit Lord",
+      "map_tip": "Pit Lord",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNPitLord.blp",
+      "icon_path": "iccup/heroes/pit_lord.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N013": {
+      "name": "Lone Druid",
+      "map_name": "Lone Druid",
+      "map_tip": "Lone Druid",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNBearForm.blp",
+      "icon_path": "iccup/heroes/lone_druid.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N014": {
+      "name": "Lone Druid",
+      "map_name": "Lone Druid",
+      "map_tip": "Lone Druid",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNBearForm.blp",
+      "icon_path": "iccup/heroes/lone_druid.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N015": {
+      "name": "Lone Druid",
+      "map_name": "Lone Druid",
+      "map_tip": "Lone Druid",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNBearForm.blp",
+      "icon_path": "iccup/heroes/lone_druid.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N016": {
+      "name": "Troll Warlord",
+      "map_name": "Troll Warlord",
+      "map_tip": "Troll Warlord",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNForestTroll.blp",
+      "icon_path": "iccup/heroes/troll_warlord.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N017": {
+      "name": "Troll Warlord",
+      "map_name": "Troll Warlord",
+      "map_tip": "Troll Warlord",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNForestTroll.blp",
+      "icon_path": "iccup/heroes/troll_warlord.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N01A": {
+      "name": "Silencer",
+      "map_name": "Silencer",
+      "map_tip": "Silencer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSpellBreaker.blp",
+      "icon_path": "iccup/heroes/silencer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N01H": {
+      "name": "Alchemist",
+      "map_name": "Alchemist",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroAlchemist.blp",
+      "icon_path": "iccup/heroes/alchemist.jpg",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N01I": {
+      "name": "Alchemist",
+      "map_name": "Alchemist",
+      "map_tip": "Alchemist",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroAlchemist.blp",
+      "icon_path": "iccup/heroes/alchemist.jpg",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N01J": {
+      "name": "Alchemist",
+      "map_name": "Alchemist",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroAlchemist.blp",
+      "icon_path": "iccup/heroes/alchemist.jpg",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N01O": {
+      "name": "Lone Druid",
+      "map_name": "Lone Druid",
+      "map_tip": "Lone Druid",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNDruidOfTheClaw.blp",
+      "icon_path": "iccup/heroes/lone_druid.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N01T": {
+      "name": "Alchemist",
+      "map_name": "Alchemist",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroAlchemist.blp",
+      "icon_path": "iccup/heroes/alchemist.jpg",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N01V": {
+      "name": "Priestess Of The Moon",
+      "map_name": "Priestess of the Moon",
+      "map_tip": "Priestess of the Moon",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNPriestessOfTheMoon.blp",
+      "icon_path": "iccup/heroes/priestess_of_the_moon.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N01W": {
+      "name": "Shadow Priest",
+      "map_name": "Shadow Priest",
+      "map_tip": "Shadow Priest",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNDarkTrollShadowPriest.blp",
+      "icon_path": "iccup/heroes/shadow_priest.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N02B": {
+      "name": "Troll Warlord",
+      "map_name": "Troll Warlord",
+      "map_tip": "Troll Warlord",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNForestTroll.blp",
+      "icon_path": "iccup/heroes/troll_warlord.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0EG": {
+      "name": "Windrunner",
+      "map_name": "Windrunner",
+      "map_tip": "Windrunner",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSylvanusWindrunner.blp",
+      "icon_path": "iccup/heroes/windrunner.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0EI": {
+      "name": "Windrunner",
+      "map_name": "Windrunner",
+      "map_tip": "Summon |cffffcc00W|rindrunner",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSylvanusWindrunner.blp",
+      "icon_path": "iccup/heroes/windrunner.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0EJ": {
+      "name": "Windrunner",
+      "map_name": "Windrunner",
+      "map_tip": "Summon |cffffcc00W|rindrunner",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSylvanusWindrunner.blp",
+      "icon_path": "iccup/heroes/windrunner.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0EK": {
+      "name": "Windrunner",
+      "map_name": "Windrunner",
+      "map_tip": "Summon |cffffcc00W|rindrunner",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSylvanusWindrunner.blp",
+      "icon_path": "iccup/heroes/windrunner.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0EM": {
+      "name": "Windrunner",
+      "map_name": "Windrunner",
+      "map_tip": "Summon |cffffcc00W|rindrunner",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSylvanusWindrunner.blp",
+      "icon_path": "iccup/heroes/windrunner.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0HP": {
+      "name": "Ancient Apparition",
+      "map_name": "Ancient Apparition",
+      "map_tip": "Ancient Apparition",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNIcyGhost.blp",
+      "icon_path": "iccup/heroes/ancient_apparition.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0HT": {
+      "name": "Alchemist",
+      "map_name": "Alchemist",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroAlchemist.blp",
+      "icon_path": "iccup/heroes/alchemist.jpg",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0M0": {
+      "name": "Ember Spirit",
+      "map_name": "Ember Spirit",
+      "map_tip": "Ember Spirit",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFireBrewmaster.blp",
+      "icon_path": "iccup/heroes/ember_spirit.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0M7": {
+      "name": "Winter Wyvern",
+      "map_name": "Winter Wyvern",
+      "map_tip": "Winter Wyvern",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFrostWyrm.blp",
+      "icon_path": "iccup/heroes/winter_wyvern.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0MA": {
+      "name": "Winter Wyvern",
+      "map_name": "Winter Wyvern",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFrostWyrm.blp",
+      "icon_path": "iccup/heroes/winter_wyvern.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0MB": {
+      "name": "Winter Wyvern",
+      "map_name": "Winter Wyvern",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFrostWyrm.blp",
+      "icon_path": "iccup/heroes/winter_wyvern.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0MC": {
+      "name": "Winter Wyvern",
+      "map_name": "Winter Wyvern",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFrostWyrm.blp",
+      "icon_path": "iccup/heroes/winter_wyvern.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0MD": {
+      "name": "Oracle",
+      "map_name": "Oracle",
+      "map_tip": "Oracle",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNPriest.blp",
+      "icon_path": "iccup/heroes/oracle.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0MH": {
+      "name": "Ember Spirit",
+      "map_name": "Ember Spirit",
+      "map_tip": "Ember Spirit",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFireBrewmaster.blp",
+      "icon_path": "iccup/heroes/ember_spirit.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0MK": {
+      "name": "Arc Warden",
+      "map_name": "Arc Warden",
+      "map_tip": "Arc Warden",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGnollWarden.blp",
+      "icon_path": "iccup/heroes/arc_warden.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0MM": {
+      "name": "Arc Warden",
+      "map_name": "Arc Warden",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGnollWarden.blp",
+      "icon_path": "iccup/heroes/arc_warden.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0MO": {
+      "name": "Winter Wyvern",
+      "map_name": "Winter Wyvern",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNFrostWyrm.blp",
+      "icon_path": "iccup/heroes/winter_wyvern.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0MU": {
+      "name": "Earth Spirit",
+      "map_name": "Earth Spirit",
+      "map_tip": "Earth Spirit",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNEarthBrewmaster.blp",
+      "icon_path": "iccup/heroes/earth_spirit.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "N0MW": {
+      "name": "Earth Spirit",
+      "map_name": "Earth Spirit",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNEarthBrewmaster.blp",
+      "icon_path": "iccup/heroes/earth_spirit.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "NC00": {
+      "name": "Skeleton King",
+      "map_name": "Skeleton King",
+      "map_tip": "Skeleton King",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSkeletonArcher.blp",
+      "icon_path": "iccup/heroes/skeleton_king.jpg",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Naka": {
+      "name": "Bounty Hunter",
+      "map_name": "Bounty Hunter",
+      "map_tip": "Bounty Hunter",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNakama.blp",
+      "icon_path": "iccup/heroes/bounty_hunter.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Nbbc": {
+      "name": "Juggernaut",
+      "map_name": "Juggernaut",
+      "map_tip": "Juggernaut",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNChaosBlademaster.blp",
+      "icon_path": "iccup/heroes/juggernaut.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Nbrn": {
+      "name": "Drow Ranger",
+      "map_name": "Drow Ranger",
+      "map_tip": "Drow Ranger",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNBansheeRanger.tga",
+      "icon_path": "iccup/heroes/drow_ranger.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Nfir": {
+      "name": "Shadow Fiend",
+      "map_name": "Shadow Fiend",
+      "map_tip": "Shadow Fiend",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNShade.blp",
+      "icon_path": "iccup/heroes/shadow_fiend.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Npbm": {
+      "name": "Pandaren Brewmaster",
+      "map_name": "Pandaren Brewmaster",
+      "map_tip": "Pandaren Brewmaster",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNPandarenBrewmaster.blp",
+      "icon_path": "iccup/heroes/pandaren_brewmaster.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Ntin": {
+      "name": "Tinker",
+      "map_name": "Tinker",
+      "map_tip": "Tinker",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroTinker.blp",
+      "icon_path": "iccup/heroes/tinker.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "O00J": {
+      "name": "Spiritbreaker",
+      "map_name": "Spiritbreaker",
+      "map_tip": "Spiritbreaker",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSpiritWalker.blp",
+      "icon_path": "iccup/heroes/spiritbreaker.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "O00P": {
+      "name": "Morphling",
+      "map_name": "Morphling",
+      "map_tip": "Morphling",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSeaElemental.blp",
+      "icon_path": "iccup/heroes/morphling.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "O015": {
+      "name": "Tauren Chieftain",
+      "map_name": "Tauren Chieftain",
+      "map_tip": "Tauren Chieftain",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroTaurenChieftain.blp",
+      "icon_path": "iccup/heroes/tauren_chieftain.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "O016": {
+      "name": "Batrider",
+      "map_name": "Batrider",
+      "map_tip": "Batrider",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNTrollBatRider.blp",
+      "icon_path": "iccup/heroes/batrider.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "O017": {
+      "name": "Batrider",
+      "map_name": "Batrider",
+      "map_tip": "",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNTrollBatRider.blp",
+      "icon_path": "iccup/heroes/batrider.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "O01F": {
+      "name": "Guardian Wisp",
+      "map_name": "Guardian Wisp",
+      "map_tip": "Guardian Wisp",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNWispHero.blp",
+      "icon_path": "iccup/heroes/guardian_wisp.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Ofar": {
+      "name": "Tidehunter",
+      "map_name": "Tidehunter",
+      "map_tip": "Tidehunter",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSeaGiantGreen.blp",
+      "icon_path": "iccup/heroes/tidehunter.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Ogrh": {
+      "name": "Phantom Lancer",
+      "map_name": "Phantom Lancer",
+      "map_tip": "Phantom Lancer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHellScream.blp",
+      "icon_path": "iccup/heroes/phantom_lancer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Opgh": {
+      "name": "Axe",
+      "map_name": "Axe",
+      "map_tip": "Axe",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNChaosGrom.blp",
+      "icon_path": "iccup/heroes/axe.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Orkn": {
+      "name": "Shadow Shaman",
+      "map_name": "Shadow Shaman",
+      "map_tip": "Shadow Shaman",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNShadowHunter.blp",
+      "icon_path": "iccup/heroes/shadow_shaman.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Oshd": {
+      "name": "Bane Elemental",
+      "map_name": "Bane Elemental",
+      "map_tip": "Bane Elemental",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNVoidWalker.blp",
+      "icon_path": "iccup/heroes/bane_elemental.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Otch": {
+      "name": "Earthshaker",
+      "map_name": "Earthshaker",
+      "map_tip": "Earthshaker",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNTauren.blp",
+      "icon_path": "iccup/heroes/earthshaker.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U000": {
+      "name": "Nerubian Assassin",
+      "map_name": "Nerubian Assassin",
+      "map_tip": "Nerubian Assassin",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroCryptLord.tga",
+      "icon_path": "iccup/heroes/nerubian_assassin.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U006": {
+      "name": "Broodmother",
+      "map_name": "Broodmother",
+      "map_tip": "Broodmother",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSpiderBlack.blp",
+      "icon_path": "iccup/heroes/broodmother.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U007": {
+      "name": "Lifestealer",
+      "map_name": "Lifestealer",
+      "map_tip": "Summon |cffffcc00L|rifestealer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGhoul.blp",
+      "icon_path": "iccup/heroes/lifestealer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U008": {
+      "name": "Lycanthrope",
+      "map_name": "Lycanthrope",
+      "map_tip": "Lycanthrope",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNKiljaedin.blp",
+      "icon_path": "iccup/heroes/lycanthrope.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U00A": {
+      "name": "Chaos Knight",
+      "map_name": "Chaos Knight",
+      "map_tip": "Chaos Knight",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNChaosWarlord.blp",
+      "icon_path": "iccup/heroes/chaos_knight.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U00C": {
+      "name": "Lifestealer",
+      "map_name": "Lifestealer",
+      "map_tip": "Lifestealer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGhoul.blp",
+      "icon_path": "iccup/heroes/lifestealer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U00E": {
+      "name": "Necrolyte",
+      "map_name": "Necrolyte",
+      "map_tip": "Necrolyte",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNGhostOfKelThuzad.blp",
+      "icon_path": "iccup/heroes/necrolyte.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U00F": {
+      "name": "Pudge",
+      "map_name": "Butcher",
+      "map_tip": "Pudge",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNAbomination.blp",
+      "icon_path": "iccup/heroes/pudge.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U00K": {
+      "name": "Sand King",
+      "map_name": "Sand King",
+      "map_tip": "Sand King",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNArachnathidGreen.blp",
+      "icon_path": "iccup/heroes/sand_king.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U00P": {
+      "name": "Obsidian Destroyer",
+      "map_name": "Obsidian Destroyer",
+      "map_tip": "Obsidian Destroyer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNDestroyer.blp",
+      "icon_path": "iccup/heroes/obsidian_destroyer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U01X": {
+      "name": "Stone Giant",
+      "map_name": "Stone Giant",
+      "map_tip": "Stone Giant",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNMountainGiant.blp",
+      "icon_path": "iccup/heroes/stone_giant.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "U01Z": {
+      "name": "Nerubian Assassin",
+      "map_name": "Nerubian Assassin",
+      "map_tip": "Nerubian Assassin",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroCryptLord.tga",
+      "icon_path": "iccup/heroes/nerubian_assassin.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "UC01": {
+      "name": "Queen of Pain",
+      "map_name": "Queen of Pain",
+      "map_tip": "Queen of Pain",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNBlueDemoness.tga",
+      "icon_path": "iccup/heroes/queen_of_pain.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "UC11": {
+      "name": "Magnataur",
+      "map_name": "Magnataur",
+      "map_tip": "Magnataur",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNBlueMagnataur.tga",
+      "icon_path": "iccup/heroes/magnataur.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "UC18": {
+      "name": "Demon Witch",
+      "map_name": "Demon Witch",
+      "map_tip": "Demon Witch",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNLion.BLP",
+      "icon_path": "iccup/heroes/demon_witch.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "UC42": {
+      "name": "Doom Bringer",
+      "map_name": "Doom Bringer",
+      "map_tip": "Doom Bringer",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNDoomGuard.blp",
+      "icon_path": "iccup/heroes/doom_bringer.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "UC60": {
+      "name": "Necro`lic",
+      "map_name": "Necro'lic",
+      "map_tip": "Necro'lic",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSpiritWyvern.blp",
+      "icon_path": "iccup/heroes/necro_lic.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "UC76": {
+      "name": "Death Prophet",
+      "map_name": "Death Prophet",
+      "map_tip": "Death Prophet",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNBanshee.blp",
+      "icon_path": "iccup/heroes/death_prophet.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "UC91": {
+      "name": "Slithereen Guard",
+      "map_name": "Slithereen Guard",
+      "map_tip": "Slithereen Guard",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNNagaMyrmidon.tga",
+      "icon_path": "iccup/heroes/slithereen_guard.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Ubal": {
+      "name": "Nerubian Weaver",
+      "map_name": "Nerubian Weaver",
+      "map_tip": "Nerubian Weaver",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNNerubianQueen.blp",
+      "icon_path": "iccup/heroes/nerubian_weaver.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Ucrl": {
+      "name": "Stone Giant",
+      "map_name": "Stone Giant",
+      "map_tip": "Stone Giant",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNMountainGiant.blp",
+      "icon_path": "iccup/heroes/stone_giant.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Udea": {
+      "name": "Lord of Avernus",
+      "map_name": "Lord of Avernus",
+      "map_tip": "Lord of Avernus",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNHeroDeathKnight.blp",
+      "icon_path": "iccup/heroes/lord_of_avernus.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Udre": {
+      "name": "Night Stalker",
+      "map_name": "Night Stalker",
+      "map_tip": "Night Stalker",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNTichondrius.blp",
+      "icon_path": "iccup/heroes/night_stalker.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Uktl": {
+      "name": "Enigma",
+      "map_name": "Enigma",
+      "map_tip": "Enigma",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_SummonVoidWalker.blp",
+      "icon_path": "iccup/heroes/enigma.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Ulic": {
+      "name": "Lich",
+      "map_name": "Lich",
+      "map_tip": "Lich",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNLichVersion2.blp",
+      "icon_path": "iccup/heroes/lich.png",
+      "source": "exact embedded iCCup map unit string table"
+    },
+    "Usyl": {
+      "name": "Dwarven Sniper",
+      "map_name": "Dwarven Sniper",
+      "map_tip": "Dwarven Sniper",
+      "art": "ReplaceableTextures\\CommandButtons\\BTNRifleman.blp",
+      "icon_path": "iccup/heroes/dwarven_sniper.png",
+      "source": "exact embedded iCCup map unit string table"
+    }
+  },
+  "map": "iCCup DotA 500.w3x"
+}
