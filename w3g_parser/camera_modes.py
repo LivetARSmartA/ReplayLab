@@ -1,6 +1,6 @@
 from __future__ import annotations
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol
 
@@ -53,8 +53,10 @@ class DirectorOutput:
     yaw: float
     target_offset_x: float = 0.0
     target_offset_y: float = 0.0
+    yaw_velocity: float = 0.0
     pitch: float | None = None
     distance: float | None = None
+    distance_velocity: float = 0.0
     z_offset: float | None = None
 
 @dataclass(frozen=True)
@@ -77,6 +79,104 @@ class CameraDirector(Protocol):
 
     def update(self, frame: DirectorFrame) -> DirectorOutput:
         ...
+
+@dataclass
+class OrbitDirector:
+    mode = CameraRigMode.ORBIT
+    speed_degrees: float = 18.0
+    direction: int = 1
+    transition_seconds: float = 2.0
+    ring_offsets: tuple[float, float, float] = (-450.0, 0.0, 750.0)
+    ring_index: int = field(default=1, init=False)
+    _base_distance: float | None = field(default=None, init=False)
+    _distance_min: float = field(default=0.0, init=False)
+    _distance_max: float = field(default=0.0, init=False)
+    _transition_start: float = field(default=0.0, init=False)
+    _transition_target: float = field(default=0.0, init=False)
+    _transition_elapsed: float = field(default=0.0, init=False)
+
+    def __post_init__(self) -> None:
+        self.set_speed(self.speed_degrees)
+        if self.direction not in (-1, 1):
+            raise ValueError('Orbit direction must be -1 or 1')
+        if not math.isfinite(self.transition_seconds) or not 0.3 <= self.transition_seconds <= 10.0:
+            raise ValueError('Orbit transition must be in range 0.3..10 seconds')
+        if len(self.ring_offsets) != 3 or any((not math.isfinite(value) for value in self.ring_offsets)) or (not self.ring_offsets[0] < self.ring_offsets[1] < self.ring_offsets[2]) or (abs(self.ring_offsets[1]) > 1e-09):
+            raise ValueError('Orbit rings must be three ascending offsets around zero')
+
+    def reset(self, yaw: float) -> None:
+        if not math.isfinite(yaw):
+            raise ValueError('Orbit yaw must be finite')
+
+    def set_speed(self, speed_degrees: float) -> None:
+        if not math.isfinite(speed_degrees) or not 2.0 <= speed_degrees <= 90.0:
+            raise ValueError('Orbit speed must be in range 2..90')
+        self.speed_degrees = speed_degrees
+
+    def activate(self, distance: float, distance_min: float, distance_max: float) -> None:
+        if not all((math.isfinite(value) for value in (distance, distance_min, distance_max))) or distance_min >= distance_max:
+            raise ValueError('Orbit distance limits are invalid')
+        self._distance_min = distance_min
+        self._distance_max = distance_max
+        self._base_distance = min(max(distance, distance_min), distance_max)
+        self.ring_index = 1
+        self._transition_start = self._base_distance
+        self._transition_target = self._base_distance
+        self._transition_elapsed = self.transition_seconds
+
+    def deactivate(self) -> None:
+        self._base_distance = None
+        self.ring_index = 1
+        self._transition_start = 0.0
+        self._transition_target = 0.0
+        self._transition_elapsed = 0.0
+
+    def rebase(self, distance: float) -> None:
+        if self._base_distance is None or not math.isfinite(distance):
+            raise ValueError('Orbit rings are not active')
+        self.activate(distance, self._distance_min, self._distance_max)
+
+    def shift_ring(self, step: int, distance: float) -> int:
+        if self._base_distance is None:
+            raise ValueError('Orbit rings are not active')
+        if step not in (-1, 1):
+            raise ValueError('Orbit ring step must be -1 or 1')
+        if not math.isfinite(distance):
+            raise ValueError('Orbit distance must be finite')
+        next_index = min(max(self.ring_index + step, 0), 2)
+        if next_index == self.ring_index:
+            return self.ring_index
+        self.ring_index = next_index
+        self._transition_start = min(max(distance, self._distance_min), self._distance_max)
+        self._transition_target = self.ring_distance(next_index)
+        self._transition_elapsed = 0.0
+        return self.ring_index
+
+    def ring_distance(self, ring_index: int | None=None) -> float:
+        if self._base_distance is None:
+            raise ValueError('Orbit rings are not active')
+        selected = self.ring_index if ring_index is None else ring_index
+        if not 0 <= selected < len(self.ring_offsets):
+            raise ValueError('Orbit ring index must be in range 0..2')
+        return min(max(self._base_distance + self.ring_offsets[selected], self._distance_min), self._distance_max)
+
+    def reverse(self) -> int:
+        self.direction *= -1
+        return self.direction
+
+    def update(self, frame: DirectorFrame) -> DirectorOutput:
+        distance: float | None = None
+        distance_velocity = 0.0
+        if self._base_distance is not None:
+            self._transition_elapsed = min(self._transition_elapsed + max(frame.delta_seconds, 0.0), self.transition_seconds)
+            progress = self._transition_elapsed / self.transition_seconds
+            eased = progress * progress * progress * (progress * (progress * 6.0 - 15.0) + 10.0)
+            distance_delta = self._transition_target - self._transition_start
+            distance = self._transition_start + distance_delta * eased
+            if progress < 1.0:
+                eased_derivative = 30.0 * progress * progress * (progress - 1.0) * (progress - 1.0)
+                distance_velocity = distance_delta * eased_derivative / self.transition_seconds
+        return DirectorOutput(yaw=frame.yaw, yaw_velocity=math.radians(self.speed_degrees) * self.direction, distance=distance, distance_velocity=distance_velocity)
 
 @dataclass(frozen=True)
 class HeroSwitchTransition:

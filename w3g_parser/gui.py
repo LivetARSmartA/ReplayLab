@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 from PySide6.QtCore import QSettings, QSize, QTimer, Qt, QThreadPool, QRunnable, Signal, QObject
 from PySide6.QtGui import QColor, QCloseEvent, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QApplication, QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget, QListWidgetItem, QLineEdit, QMainWindow, QMessageBox, QPushButton, QSlider, QSpinBox, QSplitter, QStyle, QStyleOptionSlider, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget, QListWidgetItem, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter, QStyle, QStyleOptionSlider, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from .assets import app_icon_path, hero_icon_path, item_icon_path, release_build_id
 from .camera import CameraMotionSettings, SmoothCameraController
 from .camera_input import CameraInputRouter, KEY_CHOICES
@@ -22,16 +22,24 @@ from .settings import discover_replays, forget_failed_replay, recover_persistent
 APP_NAME = 'Warcraft III Replay Lab'
 CAMERA_HERO_SLOT_COUNT = 10
 CAMERA_CORE_MACRO_ACTIONS = (('toggle_camera', 'Камера: вкл / выкл', 119), ('follow_toggle', 'Follow: вкл / выкл', 118), ('smart_follow_toggle', 'Smart Follow', 116), ('reset_view', 'Вернуть обзор', 120))
-CAMERA_DRONE_MACRO_ACTIONS = (('drone_toggle', 'Fly Drone: вкл / выкл', 66), ('drone_target_lock', 'Drone: захват цели', 78), ('drone_turn_left', 'Drone: поворот влево 90°', 100), ('drone_turn_around', 'Drone: разворот 180°', 101), ('drone_turn_right', 'Drone: поворот вправо 90°', 102), ('drone_height_up', 'Drone: набрать высоту', 97), ('drone_height_down', 'Drone: сбросить высоту', 96))
+CAMERA_DRONE_MACRO_ACTIONS = (('drone_toggle', 'Fly Drone: вкл / выкл', 66), ('drone_target_lock', 'Drone: захват цели', 78), ('orbit_toggle', 'Orbit: вкл / выкл', 104), ('orbit_reverse', 'Orbit: сменить направление', 98), ('orbit_in', 'Orbit: ближнее кольцо', 103), ('orbit_out', 'Orbit: дальнее кольцо', 105), ('drone_turn_left', 'Drone: поворот влево 90°', 100), ('drone_turn_around', 'Drone: разворот 180°', 101), ('drone_turn_right', 'Drone: поворот вправо 90°', 102), ('drone_height_up', 'Drone: набрать высоту', 97), ('drone_height_down', 'Drone: сбросить высоту', 96))
 DRONE_TURN_DEGREES = {'drone_turn_left': 90.0, 'drone_turn_around': 180.0, 'drone_turn_right': -90.0}
+ORBIT_RING_LABELS = ('ближняя', 'средняя', 'дальняя')
 CAMERA_TRANSITION_ACTIONS = (('transition_dolly_out', 'Dolly Out', 121, CameraTransitionKind.DOLLY_OUT, 'Чистый плавный отъезд назад'), ('transition_crane_up', 'Crane Up', 122, CameraTransitionKind.CRANE_UP, 'Вертикальный операторский подъём'), ('transition_reveal', 'Reveal', 117, CameraTransitionKind.REVEAL, 'Подъём, отдаление и наклон с удержанием героя'), ('transition_push_in', 'Push In', 123, CameraTransitionKind.PUSH_IN, 'Мягкий наезд на текущий кадр'), ('transition_focus_pull', 'Focus Pull', 71, CameraTransitionKind.FOCUS_PULL, 'Отдаление с выбранным героем в центре'), ('transition_custom', 'Свой переход', 84, CameraTransitionKind.CUSTOM, 'Своя дистанция, высота, наклон и длительность'))
 CAMERA_HERO_MACRO_ACTIONS = (('hero_slot_1', 'Герой 1', 49), ('hero_slot_2', 'Герой 2', 50), ('hero_slot_3', 'Герой 3', 51), ('hero_slot_4', 'Герой 4', 52), ('hero_slot_5', 'Герой 5', 53), ('hero_slot_6', 'Герой 6', 54), ('hero_slot_7', 'Герой 7', 55), ('hero_slot_8', 'Герой 8', 56), ('hero_slot_9', 'Герой 9', 57), ('hero_slot_10', 'Герой 10', 48))
 CAMERA_MACRO_ACTIONS = CAMERA_CORE_MACRO_ACTIONS + CAMERA_DRONE_MACRO_ACTIONS + tuple(((action, label, default_key) for action, label, default_key, _, _ in CAMERA_TRANSITION_ACTIONS)) + CAMERA_HERO_MACRO_ACTIONS
 CAMERA_TRANSITION_BY_ACTION = {action: kind for action, _, _, kind, _ in CAMERA_TRANSITION_ACTIONS}
 CAMERA_MOTION_PRESETS = (('Кино · очень плавно', (35.0, 0.55, 1200.0, 1120.0, 2.7, 3.2)), ('Плавно · универсально', (55.0, 1.0, 2200.0, 1760.0, 5.0, 5.0)), ('Быстро · динамично', (90.0, 1.7, 3500.0, 2880.0, 9.0, 8.0)))
+DEFAULT_CAMERA_PRESET_INDEX = 1
 EDITABLE_CAMERA_TRANSITIONS = tuple((kind for _, _, _, kind, _ in CAMERA_TRANSITION_ACTIONS if kind != CameraTransitionKind.CUSTOM))
 MAX_VISIBLE_ITEM_TIMING_WINDOW_MS = 5 * 60 * 1000
 RELEASE_BUILD = bool(getattr(sys, '_MEIPASS', None)) or (Path(__file__).resolve().parents[1] / 'release_manifest.json').is_file()
+
+def reset_camera_preferences(settings: QSettings) -> None:
+    for group in ('camera_motion', 'camera_shot', 'camera_transition', 'camera_drone', 'camera_macro'):
+        settings.remove(group)
+    for key in ('camera_preset', 'camera_toggle_hotkey', 'camera_reset_hotkey'):
+        settings.remove(key)
 
 def format_time(milliseconds: int | None, *, millis: bool=False) -> str:
     if milliseconds is None:
@@ -324,6 +332,8 @@ class CameraSignals(QObject):
     transition = Signal(str, str, bool)
     drone = Signal(bool)
     drone_target_lock = Signal(bool)
+    orbit = Signal(bool, int)
+    orbit_ring = Signal(int)
     follow_lost = Signal(str)
     failed = Signal(str)
 
@@ -365,6 +375,20 @@ class CameraService(QObject):
     @property
     def drone_target_locked(self) -> bool:
         return self._controller is not None and self._controller.drone_target_locked
+
+    @property
+    def orbit_enabled(self) -> bool:
+        return self._controller is not None and self._controller.orbit_enabled
+
+    @property
+    def orbit_direction(self) -> int:
+        controller = self._controller
+        return 1 if controller is None else controller.orbit_direction
+
+    @property
+    def orbit_ring_index(self) -> int:
+        controller = self._controller
+        return 1 if controller is None else controller.orbit_ring_index
 
     @property
     def native_update_hz(self) -> int:
@@ -493,6 +517,10 @@ class CameraService(QObject):
             self.signals.failed.emit(str(exc))
             return
         self.signals.following.emit(rawcode)
+        if self._controller.drone_target_locked:
+            self.signals.drone_target_lock.emit(True)
+        if self._controller.orbit_enabled:
+            self.signals.orbit.emit(True, self._controller.orbit_direction)
 
     def follow_player_hero(self, player_slot: int, hero_rawcode: str, label: str) -> None:
         controller = self._controller
@@ -516,6 +544,8 @@ class CameraService(QObject):
             self.signals.following.emit(label)
             if controller.drone_target_locked:
                 self.signals.drone_target_lock.emit(True)
+            if controller.orbit_enabled:
+                self.signals.orbit.emit(True, controller.orbit_direction)
         self._executor.submit(job)
 
     def prepare_hero_slots(self, slots: list[tuple[int, str]]) -> None:
@@ -547,6 +577,7 @@ class CameraService(QObject):
             self._controller.clear_follow()
         self.signals.smart_follow.emit(False)
         self.signals.drone_target_lock.emit(False)
+        self.signals.orbit.emit(False, self.orbit_direction)
         self.signals.follow_lost.emit('')
 
     def toggle_drone(self) -> None:
@@ -561,6 +592,7 @@ class CameraService(QObject):
             return
         self.signals.drone.emit(active)
         self.signals.drone_target_lock.emit(False)
+        self.signals.orbit.emit(False, self.orbit_direction)
         if active:
             self.signals.smart_follow.emit(False)
 
@@ -575,6 +607,50 @@ class CameraService(QObject):
             self.signals.failed.emit(str(exc))
             return
         self.signals.drone_target_lock.emit(active)
+        if not active:
+            self.signals.orbit.emit(False, self.orbit_direction)
+
+    def toggle_orbit(self) -> None:
+        controller = self._controller
+        if controller is None or not controller.running:
+            self.signals.failed.emit('Сначала включи Camera Engine.')
+            return
+        try:
+            active = controller.toggle_orbit()
+        except (SeekBackendError, OSError, ValueError) as exc:
+            self.signals.failed.emit(str(exc))
+            return
+        self.signals.drone.emit(controller.drone_enabled)
+        self.signals.drone_target_lock.emit(controller.drone_target_locked)
+        self.signals.orbit.emit(active, controller.orbit_direction)
+        if active:
+            self.signals.smart_follow.emit(False)
+
+    def reverse_orbit(self) -> None:
+        controller = self._controller
+        if controller is None or not controller.running:
+            self.signals.failed.emit('Сначала включи Camera Engine.')
+            return
+        try:
+            direction = controller.reverse_orbit()
+        except (SeekBackendError, OSError, ValueError) as exc:
+            self.signals.failed.emit(str(exc))
+            return
+        self.signals.orbit.emit(True, direction)
+
+    def shift_orbit_ring(self, step: int) -> None:
+        controller = self._controller
+        if controller is None or not controller.running:
+            self.signals.failed.emit('Сначала включи Camera Engine.')
+            return
+        previous_ring = controller.orbit_ring_index
+        try:
+            ring_index = controller.shift_orbit_ring(step)
+        except (SeekBackendError, OSError, ValueError) as exc:
+            self.signals.failed.emit(str(exc))
+            return
+        if ring_index != previous_ring:
+            self.signals.orbit_ring.emit(ring_index)
 
     def turn_drone(self, angle_degrees: float) -> None:
         controller = self._controller
@@ -595,6 +671,7 @@ class CameraService(QObject):
                 self._controller.toggle_drone()
                 self.signals.drone.emit(False)
                 self.signals.drone_target_lock.emit(False)
+                self.signals.orbit.emit(False, self.orbit_direction)
             active = self._controller.toggle_smart_follow()
         except (SeekBackendError, OSError, ValueError) as exc:
             self.signals.failed.emit(str(exc))
@@ -974,7 +1051,8 @@ class ReplayLabWindow(QMainWindow):
         layout = QVBoxLayout(transport)
         layout.setContentsMargins(12, 8, 12, 8)
         seeker_bar = QHBoxLayout()
-        self.attach_button = QPushButton('Подключить сейчас')
+        self.attach_button = QPushButton('Подключить Seeker')
+        self.attach_button.setVisible(False)
         self.seek_button = QPushButton('Перейти к таймингу')
         self.cancel_button = QPushButton('Стоп')
         self.seek_profile = QComboBox()
@@ -1129,10 +1207,10 @@ class ReplayLabWindow(QMainWindow):
     def _drone_settings(self) -> DroneSettings:
         widgets = self.camera_drone_tuning_widgets
         yaw_speed = math.radians(widgets['yaw_degrees'].value())
-        return DroneSettings(move_speed=widgets['move_speed'].value(), lift_speed=widgets['lift_speed'].value(), dolly_speed=widgets['dolly_speed'].value(), yaw_speed=yaw_speed, pitch_speed=yaw_speed * 0.72, acceleration_response=widgets['acceleration_response'].value(), braking_response=widgets['braking_response'].value(), follow_response=widgets['follow_response'].value(), bank_angle=math.radians(widgets['bank_degrees'].value()))
+        return DroneSettings(move_speed=widgets['move_speed'].value(), lift_speed=widgets['lift_speed'].value(), dolly_speed=widgets['dolly_speed'].value(), yaw_speed=yaw_speed, orbit_speed_degrees=widgets['orbit_speed_degrees'].value(), pitch_speed=yaw_speed * 0.72, acceleration_response=widgets['acceleration_response'].value(), braking_response=widgets['braking_response'].value(), follow_response=widgets['follow_response'].value(), bank_angle=math.radians(widgets['bank_degrees'].value()))
 
     def _persist_drone_settings(self, settings: DroneSettings) -> None:
-        values = {'move_speed': settings.move_speed, 'lift_speed': settings.lift_speed, 'dolly_speed': settings.dolly_speed, 'yaw_speed': settings.yaw_speed, 'acceleration_response': settings.acceleration_response, 'braking_response': settings.braking_response, 'follow_response': settings.follow_response, 'bank_angle': settings.bank_angle}
+        values = {'move_speed': settings.move_speed, 'lift_speed': settings.lift_speed, 'dolly_speed': settings.dolly_speed, 'yaw_speed': settings.yaw_speed, 'orbit_speed_degrees': settings.orbit_speed_degrees, 'acceleration_response': settings.acceleration_response, 'braking_response': settings.braking_response, 'follow_response': settings.follow_response, 'bank_angle': settings.bank_angle}
         for name, value in values.items():
             self.settings.setValue(f'camera_drone/{name}', value)
 
@@ -1140,6 +1218,51 @@ class ReplayLabWindow(QMainWindow):
         settings = self._drone_settings()
         self._persist_drone_settings(settings)
         self.camera_service.update_drone_settings(settings)
+
+    def _set_drone_tuning_values(self, settings: DroneSettings) -> None:
+        values = {'move_speed': settings.move_speed, 'lift_speed': settings.lift_speed, 'dolly_speed': settings.dolly_speed, 'yaw_degrees': math.degrees(settings.yaw_speed), 'orbit_speed_degrees': settings.orbit_speed_degrees, 'acceleration_response': settings.acceleration_response, 'braking_response': settings.braking_response, 'follow_response': settings.follow_response, 'bank_degrees': math.degrees(settings.bank_angle)}
+        for name, value in values.items():
+            spin = self.camera_drone_tuning_widgets[name]
+            spin.blockSignals(True)
+            try:
+                spin.setValue(value)
+            finally:
+                spin.blockSignals(False)
+
+    def _restore_camera_preferences(self) -> None:
+        answer = QMessageBox.question(self, 'Настройки съёмки', 'Вернуть настройки съёмки по умолчанию?\n\nСбросятся характер камеры, операторские шоты, свой переход, Drone, Orbit и все клавиши управления.\nРеплеи, пути к Warcraft/iCCup и выбранные герои не изменятся.', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        reset_camera_preferences(self.settings)
+        self.camera_preset.blockSignals(True)
+        try:
+            self.camera_preset.setCurrentIndex(DEFAULT_CAMERA_PRESET_INDEX)
+        finally:
+            self.camera_preset.blockSignals(False)
+        motion_values = CAMERA_MOTION_PRESETS[DEFAULT_CAMERA_PRESET_INDEX][1]
+        self._set_camera_tuning_values(motion_values)
+        motion_settings = self._camera_motion_settings()
+        self.settings.setValue('camera_preset', DEFAULT_CAMERA_PRESET_INDEX)
+        self._persist_camera_tuning(motion_settings)
+        self.camera_service.update_settings(motion_settings)
+        default_drone_settings = DroneSettings()
+        self._set_drone_tuning_values(default_drone_settings)
+        drone_settings = self._drone_settings()
+        self._persist_drone_settings(drone_settings)
+        self.camera_service.update_drone_settings(drone_settings)
+        defaults = {action: default for action, _, default in CAMERA_MACRO_ACTIONS}
+        for action, combo in self.camera_macro_combos.items():
+            default_key = defaults[action]
+            combo.blockSignals(True)
+            try:
+                combo.setCurrentIndex(combo.findData(default_key))
+            finally:
+                combo.blockSignals(False)
+            self._camera_binding_values[action] = default_key
+        self._sync_camera_macro_bindings()
+        self._load_shot_tuning()
+        self.settings.sync()
+        self.camera_status.setText('Настройки съёмки возвращены по умолчанию')
 
     def _selected_shot_kind(self) -> CameraTransitionKind:
         value = str(self.camera_shot_editor.currentData())
@@ -1267,9 +1390,12 @@ class ReplayLabWindow(QMainWindow):
         for preset_label, preset_values in CAMERA_MOTION_PRESETS:
             self.camera_preset.addItem(preset_label, preset_values)
         self.camera_preset.addItem('Свои настройки', None)
-        stored_preset = int(self.settings.value('camera_preset', 1))
+        stored_preset = int(self.settings.value('camera_preset', DEFAULT_CAMERA_PRESET_INDEX))
         self.camera_preset.setCurrentIndex(min(max(stored_preset, 0), self.camera_preset.count() - 1))
         controls.addWidget(self.camera_preset)
+        self.camera_defaults_button = QPushButton('Настройки по умолчанию')
+        self.camera_defaults_button.setToolTip('Сбросить камеру, операторские шоты, Drone/Orbit и клавиши управления')
+        controls.addWidget(self.camera_defaults_button)
         controls.addStretch()
         self.camera_start_button = QPushButton('Включить плавную камеру')
         self.camera_stop_button = QPushButton('Выключить')
@@ -1469,7 +1595,7 @@ class ReplayLabWindow(QMainWindow):
         drone_layout = QVBoxLayout(drone_page)
         drone_layout.setContentsMargins(16, 14, 16, 14)
         drone_layout.setSpacing(12)
-        drone_intro = QLabel('Свободный нативный полёт с инерцией и автоматическим креном. Захват цели использует выбранного героя: движение вперёд становится наездом, стрейф — орбитальным облётом.')
+        drone_intro = QLabel('Свободный нативный полёт с инерцией и автоматическим креном. Захват цели использует выбранного героя: движение вперёд становится наездом, стрейф — ручным облётом, а Orbit ведёт круг автоматически и плавно переходит между тремя радиусами.')
         drone_intro.setObjectName('playerMeta')
         drone_intro.setWordWrap(True)
         drone_layout.addWidget(drone_intro)
@@ -1481,14 +1607,23 @@ class ReplayLabWindow(QMainWindow):
         drone_actions_layout.setVerticalSpacing(8)
         self.camera_drone_button = QPushButton('Включить Fly Drone')
         self.camera_drone_lock_button = QPushButton('Захватить героя')
+        self.camera_orbit_button = QPushButton('Включить Orbit')
+        self.camera_orbit_reverse_button = QPushButton('Сменить направление Orbit')
+        self.camera_orbit_in_button = QPushButton('Орбита ближе')
+        self.camera_orbit_out_button = QPushButton('Орбита дальше')
+        self.camera_orbit_ring_buttons = (self.camera_orbit_in_button, self.camera_orbit_out_button)
         self.camera_drone_turn_left_button = QPushButton('Повернуть влево на 90°')
         self.camera_drone_turn_button = QPushButton('Развернуться на 180°')
         self.camera_drone_turn_right_button = QPushButton('Повернуть вправо на 90°')
         self.camera_drone_turn_buttons = (self.camera_drone_turn_left_button, self.camera_drone_turn_button, self.camera_drone_turn_right_button)
-        for action_button in (self.camera_drone_button, self.camera_drone_lock_button, *self.camera_drone_turn_buttons):
+        for action_button in (self.camera_drone_button, self.camera_drone_lock_button, self.camera_orbit_button, self.camera_orbit_reverse_button, *self.camera_orbit_ring_buttons, *self.camera_drone_turn_buttons):
             action_button.setMinimumHeight(28)
         self.camera_drone_button.setEnabled(False)
         self.camera_drone_lock_button.setEnabled(False)
+        self.camera_orbit_button.setEnabled(False)
+        self.camera_orbit_reverse_button.setEnabled(False)
+        for ring_button in self.camera_orbit_ring_buttons:
+            ring_button.setEnabled(False)
         for turn_button in self.camera_drone_turn_buttons:
             turn_button.setEnabled(False)
         drone_actions_layout.addWidget(self.camera_drone_button, 0, 0, 1, 2)
@@ -1516,16 +1651,36 @@ class ReplayLabWindow(QMainWindow):
         turn_right_bind.setMinimumWidth(100)
         self._setup_camera_macro_combo(turn_right_bind, 'drone_turn_right', action_defaults['drone_turn_right'])
         drone_actions_layout.addWidget(turn_right_bind, 1, 5)
-        drone_actions_layout.addWidget(QLabel('Набрать высоту · удерживать'), 2, 0)
+        drone_actions_layout.addWidget(self.camera_orbit_button, 2, 0, 1, 2)
+        orbit_bind = QComboBox()
+        orbit_bind.setMinimumWidth(100)
+        self._setup_camera_macro_combo(orbit_bind, 'orbit_toggle', action_defaults['orbit_toggle'])
+        drone_actions_layout.addWidget(orbit_bind, 2, 2)
+        drone_actions_layout.addWidget(self.camera_orbit_reverse_button, 2, 3, 1, 2)
+        orbit_reverse_bind = QComboBox()
+        orbit_reverse_bind.setMinimumWidth(100)
+        self._setup_camera_macro_combo(orbit_reverse_bind, 'orbit_reverse', action_defaults['orbit_reverse'])
+        drone_actions_layout.addWidget(orbit_reverse_bind, 2, 5)
+        drone_actions_layout.addWidget(self.camera_orbit_in_button, 3, 0, 1, 2)
+        orbit_in_bind = QComboBox()
+        orbit_in_bind.setMinimumWidth(100)
+        self._setup_camera_macro_combo(orbit_in_bind, 'orbit_in', action_defaults['orbit_in'])
+        drone_actions_layout.addWidget(orbit_in_bind, 3, 2)
+        drone_actions_layout.addWidget(self.camera_orbit_out_button, 3, 3, 1, 2)
+        orbit_out_bind = QComboBox()
+        orbit_out_bind.setMinimumWidth(100)
+        self._setup_camera_macro_combo(orbit_out_bind, 'orbit_out', action_defaults['orbit_out'])
+        drone_actions_layout.addWidget(orbit_out_bind, 3, 5)
+        drone_actions_layout.addWidget(QLabel('Набрать высоту · удерживать'), 4, 0)
         height_up_bind = QComboBox()
         height_up_bind.setMinimumWidth(100)
         self._setup_camera_macro_combo(height_up_bind, 'drone_height_up', action_defaults['drone_height_up'])
-        drone_actions_layout.addWidget(height_up_bind, 2, 1)
-        drone_actions_layout.addWidget(QLabel('Сбросить высоту · удерживать'), 2, 2)
+        drone_actions_layout.addWidget(height_up_bind, 4, 1)
+        drone_actions_layout.addWidget(QLabel('Сбросить высоту · удерживать'), 4, 2)
         height_down_bind = QComboBox()
         height_down_bind.setMinimumWidth(100)
         self._setup_camera_macro_combo(height_down_bind, 'drone_height_down', action_defaults['drone_height_down'])
-        drone_actions_layout.addWidget(height_down_bind, 2, 3)
+        drone_actions_layout.addWidget(height_down_bind, 4, 3)
         drone_actions_layout.setColumnStretch(0, 1)
         drone_actions_layout.setColumnStretch(2, 1)
         drone_actions_layout.setColumnStretch(4, 1)
@@ -1540,8 +1695,8 @@ class ReplayLabWindow(QMainWindow):
         drone_grid.setHorizontalSpacing(10)
         drone_grid.setVerticalSpacing(8)
         defaults = DroneSettings()
-        stored_drone_values = {'move_speed': self._stored_float('camera_drone/move_speed', defaults.move_speed, 10.0, 250.0), 'lift_speed': self._stored_float('camera_drone/lift_speed', defaults.lift_speed, 200.0, 5000.0), 'dolly_speed': self._stored_float('camera_drone/dolly_speed', defaults.dolly_speed, 200.0, 5000.0), 'yaw_degrees': math.degrees(self._stored_float('camera_drone/yaw_speed', defaults.yaw_speed, math.radians(10.0), math.radians(180.0))), 'acceleration_response': self._stored_float('camera_drone/acceleration_response', defaults.acceleration_response, 0.5, 20.0), 'braking_response': self._stored_float('camera_drone/braking_response', defaults.braking_response, 0.5, 30.0), 'follow_response': self._stored_float('camera_drone/follow_response', defaults.follow_response, 0.5, 20.0), 'bank_degrees': math.degrees(self._stored_float('camera_drone/bank_angle', defaults.bank_angle, 0.0, math.radians(20.0)))}
-        drone_fields = (('move_speed', 'Скорость', 10.0, 250.0, 5.0, 0, ' ед./с'), ('lift_speed', 'Подъём', 200.0, 5000.0, 100.0, 0, ' ед./с'), ('dolly_speed', 'Наезд', 200.0, 5000.0, 100.0, 0, ' ед./с'), ('yaw_degrees', 'Поворот', 10.0, 180.0, 2.5, 1, '°/с'), ('acceleration_response', 'Разгон', 0.5, 20.0, 0.2, 1, ''), ('braking_response', 'Торможение', 0.5, 30.0, 0.2, 1, ''), ('follow_response', 'Захват цели', 0.5, 20.0, 0.2, 1, ''), ('bank_degrees', 'Крен', 0.0, 20.0, 0.5, 1, '°'))
+        stored_drone_values = {'move_speed': self._stored_float('camera_drone/move_speed', defaults.move_speed, 10.0, 250.0), 'lift_speed': self._stored_float('camera_drone/lift_speed', defaults.lift_speed, 200.0, 5000.0), 'dolly_speed': self._stored_float('camera_drone/dolly_speed', defaults.dolly_speed, 200.0, 5000.0), 'yaw_degrees': math.degrees(self._stored_float('camera_drone/yaw_speed', defaults.yaw_speed, math.radians(10.0), math.radians(180.0))), 'orbit_speed_degrees': self._stored_float('camera_drone/orbit_speed_degrees', defaults.orbit_speed_degrees, 2.0, 90.0), 'acceleration_response': self._stored_float('camera_drone/acceleration_response', defaults.acceleration_response, 0.5, 20.0), 'braking_response': self._stored_float('camera_drone/braking_response', defaults.braking_response, 0.5, 30.0), 'follow_response': self._stored_float('camera_drone/follow_response', defaults.follow_response, 0.5, 20.0), 'bank_degrees': math.degrees(self._stored_float('camera_drone/bank_angle', defaults.bank_angle, 0.0, math.radians(20.0)))}
+        drone_fields = (('move_speed', 'Скорость', 10.0, 250.0, 5.0, 0, ' ед./с'), ('lift_speed', 'Подъём', 200.0, 5000.0, 100.0, 0, ' ед./с'), ('dolly_speed', 'Наезд', 200.0, 5000.0, 100.0, 0, ' ед./с'), ('yaw_degrees', 'Поворот', 10.0, 180.0, 2.5, 1, '°/с'), ('orbit_speed_degrees', 'Скорость Orbit', 2.0, 90.0, 1.0, 1, '°/с'), ('acceleration_response', 'Разгон', 0.5, 20.0, 0.2, 1, ''), ('braking_response', 'Торможение', 0.5, 30.0, 0.2, 1, ''), ('follow_response', 'Захват цели', 0.5, 20.0, 0.2, 1, ''), ('bank_degrees', 'Крен', 0.0, 20.0, 0.5, 1, '°'))
         self.camera_drone_tuning_widgets: dict[str, QDoubleSpinBox] = {}
         for index, (name, label, minimum, maximum, step, decimals, suffix) in enumerate(drone_fields):
             row, column = divmod(index, 4)
@@ -1560,12 +1715,18 @@ class ReplayLabWindow(QMainWindow):
         for spin in self.camera_drone_tuning_widgets.values():
             spin.valueChanged.connect(lambda _value: self._drone_tuning_changed())
         drone_layout.addWidget(drone_tuning)
-        drone_help = QLabel('Стрелки — полёт / орбита · Insert/Delete — поворот · Home/End — наклон · Page Up/Page Down — наезд · высота и разворот на 180° назначаются выше. При потере пакетов дрон сам тормозит.')
+        drone_help = QLabel('Стрелки — полёт / орбита · Insert/Delete — поворот · Home/End — наклон · Page Up/Page Down — наезд · Num 7/Num 9 — кольцо ближе/дальше · Num 8/Num 2 — Orbit и реверс · высота и разворот на 180° назначаются выше. При потере пакетов дрон сам тормозит.')
         drone_help.setObjectName('hint')
         drone_help.setWordWrap(True)
         drone_layout.addWidget(drone_help)
         drone_layout.addStretch()
-        self.camera_tool_tabs.addTab(drone_page, 'Fly Drone')
+        drone_page.setMinimumHeight(520)
+        drone_scroll = QScrollArea()
+        drone_scroll.setWidgetResizable(True)
+        drone_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        drone_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        drone_scroll.setWidget(drone_page)
+        self.camera_tool_tabs.addTab(drone_scroll, 'Fly Drone')
         self._normalize_camera_macro_bindings()
         self._sync_camera_macro_bindings()
         self.camera_status = QLabel('Открой реплей в Warcraft и включи независимый Camera Engine.')
@@ -1575,12 +1736,17 @@ class ReplayLabWindow(QMainWindow):
         layout.addStretch()
         self.camera_start_button.clicked.connect(self._start_camera)
         self.camera_stop_button.clicked.connect(self.camera_service.stop)
+        self.camera_defaults_button.clicked.connect(self._restore_camera_preferences)
         self.camera_follow_button.clicked.connect(self._follow_camera_player)
         self.camera_unfollow_button.clicked.connect(self.camera_service.clear_follow)
         self.camera_smart_follow_button.clicked.connect(self.camera_service.toggle_smart_follow)
         self.camera_reset_button.clicked.connect(self.camera_service.reset_view)
         self.camera_drone_button.clicked.connect(self.camera_service.toggle_drone)
         self.camera_drone_lock_button.clicked.connect(self.camera_service.toggle_drone_target_lock)
+        self.camera_orbit_button.clicked.connect(self.camera_service.toggle_orbit)
+        self.camera_orbit_reverse_button.clicked.connect(self.camera_service.reverse_orbit)
+        self.camera_orbit_in_button.clicked.connect(lambda: self.camera_service.shift_orbit_ring(-1))
+        self.camera_orbit_out_button.clicked.connect(lambda: self.camera_service.shift_orbit_ring(1))
         self.camera_drone_turn_button.clicked.connect(lambda: self.camera_service.turn_drone(DRONE_TURN_DEGREES['drone_turn_around']))
         self.camera_drone_turn_left_button.clicked.connect(lambda: self.camera_service.turn_drone(DRONE_TURN_DEGREES['drone_turn_left']))
         self.camera_drone_turn_right_button.clicked.connect(lambda: self.camera_service.turn_drone(DRONE_TURN_DEGREES['drone_turn_right']))
@@ -1623,6 +1789,8 @@ class ReplayLabWindow(QMainWindow):
         signals.transition.connect(self._camera_transition)
         signals.drone.connect(self._camera_drone)
         signals.drone_target_lock.connect(self._camera_drone_target_lock)
+        signals.orbit.connect(self._camera_orbit)
+        signals.orbit_ring.connect(self._camera_orbit_ring)
         signals.follow_lost.connect(self._camera_follow_lost)
         signals.failed.connect(self._camera_error)
 
@@ -1847,6 +2015,7 @@ class ReplayLabWindow(QMainWindow):
                     return False
             self.camera_service.stop()
             self.seeker.detach()
+            self.attach_button.setVisible(False)
             iccup_launcher = self._iccup_launcher()
             if iccup_launcher is None and self._is_iccup_replay(path):
                 answer = QMessageBox.question(self, 'iCCup Launcher не найден', 'Этот реплей создан на iCCup, но ReplayLab не нашёл Launcher.exe. Указать пути к iCCup Launcher и war3.exe?', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Yes)
@@ -1897,6 +2066,7 @@ class ReplayLabWindow(QMainWindow):
 
     def _launch_failed(self, message: str) -> None:
         self._auto_attach_pid = None
+        self.attach_button.setVisible(True)
         if self._pending_backward_seek is not None:
             self._clear_backward_seek()
         self.connection_label.setText('Replay не запущен')
@@ -1909,6 +2079,7 @@ class ReplayLabWindow(QMainWindow):
     def _schedule_auto_attach(self, pid: int, *, delay_ms: int) -> None:
         self._auto_attach_pid = pid
         self._auto_attach_deadline = time.monotonic() + 25.0
+        self.attach_button.setVisible(False)
         QTimer.singleShot(delay_ms, self._auto_attach_seeker)
 
     def _auto_attach_seeker(self) -> None:
@@ -1917,7 +2088,8 @@ class ReplayLabWindow(QMainWindow):
             return
         if time.monotonic() >= self._auto_attach_deadline:
             self._auto_attach_pid = None
-            self.seek_status.setText('Replay запущен, но Seeker не успел подключиться. Нажми «Подключить сейчас».')
+            self.seek_status.setText('Replay запущен, но Seeker не успел подключиться. Попробуй ручное восстановление.')
+            self.attach_button.setVisible(True)
             return
         if self.seeker.busy:
             QTimer.singleShot(250, self._auto_attach_seeker)
@@ -2323,6 +2495,18 @@ class ReplayLabWindow(QMainWindow):
         if action == 'drone_target_lock':
             self.camera_service.toggle_drone_target_lock()
             return
+        if action == 'orbit_toggle':
+            self.camera_service.toggle_orbit()
+            return
+        if action == 'orbit_reverse':
+            self.camera_service.reverse_orbit()
+            return
+        if action == 'orbit_in':
+            self.camera_service.shift_orbit_ring(-1)
+            return
+        if action == 'orbit_out':
+            self.camera_service.shift_orbit_ring(1)
+            return
         drone_turn_degrees = DRONE_TURN_DEGREES.get(action)
         if drone_turn_degrees is not None:
             self.camera_service.turn_drone(drone_turn_degrees)
@@ -2343,6 +2527,12 @@ class ReplayLabWindow(QMainWindow):
                 return
             self._follow_camera_slot(slot_index)
 
+    def _sync_orbit_ring_controls(self, active: bool, ring_index: int) -> str:
+        selected = min(max(int(ring_index), 0), 2)
+        self.camera_orbit_in_button.setEnabled(active and selected > 0)
+        self.camera_orbit_out_button.setEnabled(active and selected < 2)
+        return ORBIT_RING_LABELS[selected]
+
     def _camera_ready(self, state: object) -> None:
         self.camera_start_button.setEnabled(False)
         self.camera_stop_button.setEnabled(True)
@@ -2355,6 +2545,9 @@ class ReplayLabWindow(QMainWindow):
         self.camera_reset_button.setEnabled(True)
         self.camera_drone_button.setEnabled(True)
         self.camera_drone_lock_button.setEnabled(False)
+        self.camera_orbit_button.setEnabled(False)
+        self.camera_orbit_reverse_button.setEnabled(False)
+        self._sync_orbit_ring_controls(False, 1)
         for turn_button in self.camera_drone_turn_buttons:
             turn_button.setEnabled(False)
         self.camera_service.update_settings(self._camera_motion_settings())
@@ -2374,6 +2567,11 @@ class ReplayLabWindow(QMainWindow):
     def _camera_state_changed(self, state: object) -> None:
         if self.camera_service.drone_enabled:
             update_hz = self.camera_service.native_update_hz
+            if self.camera_service.orbit_enabled:
+                direction = 'влево' if self.camera_service.orbit_direction > 0 else 'вправо'
+                ring_label = self._sync_orbit_ring_controls(True, self.camera_service.orbit_ring_index)
+                self.camera_status.setText(f'Orbit · {ring_label} орбита · облёт {direction} · нативная физика {update_hz} Гц')
+                return
             lock_text = ' · захват цели' if self.camera_service.drone_target_locked else ' · свободный полёт'
             self.camera_status.setText(f'Fly Drone активен{lock_text} · нативная физика {update_hz} Гц')
             return
@@ -2398,6 +2596,11 @@ class ReplayLabWindow(QMainWindow):
         self.camera_drone_button.setText('Включить Fly Drone')
         self.camera_drone_lock_button.setEnabled(False)
         self.camera_drone_lock_button.setText('Захватить героя')
+        self.camera_orbit_button.setEnabled(False)
+        self.camera_orbit_button.setText('Включить Orbit')
+        self.camera_orbit_reverse_button.setEnabled(False)
+        self.camera_orbit_reverse_button.setText('Сменить направление Orbit')
+        self._sync_orbit_ring_controls(False, 1)
         for turn_button in self.camera_drone_turn_buttons:
             turn_button.setEnabled(False)
         self.camera_status.setText('Плавная камера выключена')
@@ -2410,6 +2613,9 @@ class ReplayLabWindow(QMainWindow):
         self.camera_unfollow_button.setEnabled(True)
         self.camera_smart_follow_button.setEnabled(True)
         self.camera_drone_lock_button.setEnabled(self.camera_service.drone_enabled)
+        self.camera_orbit_button.setEnabled(True)
+        self.camera_orbit_reverse_button.setEnabled(self.camera_service.orbit_enabled)
+        self._sync_orbit_ring_controls(self.camera_service.orbit_enabled, self.camera_service.orbit_ring_index)
         if self.camera_service.drone_enabled:
             self.camera_status.setText(f'Fly Drone · цель выбрана: {label} · включи захват')
             return
@@ -2436,6 +2642,9 @@ class ReplayLabWindow(QMainWindow):
     def _camera_drone(self, active: bool) -> None:
         self.camera_drone_button.setText('Выключить Fly Drone' if active else 'Включить Fly Drone')
         self.camera_drone_lock_button.setEnabled(active and self.camera_service.following)
+        self.camera_orbit_button.setEnabled(self.camera_service.following)
+        self.camera_orbit_reverse_button.setEnabled(active and self.camera_service.orbit_enabled)
+        self._sync_orbit_ring_controls(active and self.camera_service.orbit_enabled, self.camera_service.orbit_ring_index)
         for turn_button in self.camera_drone_turn_buttons:
             turn_button.setEnabled(active)
         if not active:
@@ -2451,7 +2660,26 @@ class ReplayLabWindow(QMainWindow):
             self.camera_drone_lock_button.setEnabled(False)
             return
         self.camera_drone_lock_button.setEnabled(self.camera_service.following)
+        self.camera_orbit_button.setEnabled(self.camera_service.following)
+        self.camera_orbit_reverse_button.setEnabled(active and self.camera_service.orbit_enabled)
+        self._sync_orbit_ring_controls(active and self.camera_service.orbit_enabled, self.camera_service.orbit_ring_index)
         self.camera_status.setText('Fly Drone · цель удерживается · стрейф даёт орбитальный облёт' if active else 'Fly Drone · свободный полёт')
+
+    def _camera_orbit(self, active: bool, direction: int) -> None:
+        self.camera_orbit_button.setText('Выключить Orbit' if active else 'Включить Orbit')
+        self.camera_orbit_button.setEnabled(self.camera_service.running and self.camera_service.following)
+        self.camera_orbit_reverse_button.setEnabled(active)
+        direction_label = 'влево' if direction > 0 else 'вправо'
+        self.camera_orbit_reverse_button.setText(f'Сменить направление · сейчас {direction_label}' if active else 'Сменить направление Orbit')
+        ring_label = self._sync_orbit_ring_controls(active, self.camera_service.orbit_ring_index)
+        if active:
+            self.camera_status.setText(f'Orbit активен · {ring_label} орбита · плавный облёт {direction_label}')
+
+    def _camera_orbit_ring(self, ring_index: int) -> None:
+        active = self.camera_service.orbit_enabled
+        ring_label = self._sync_orbit_ring_controls(active, ring_index)
+        if active:
+            self.camera_status.setText(f'Orbit · переход на {ring_label} орбиту · вращение и захват цели продолжаются')
 
     def _camera_follow_lost(self, message: str) -> None:
         self.camera_unfollow_button.setEnabled(False)
@@ -2459,6 +2687,11 @@ class ReplayLabWindow(QMainWindow):
         self.camera_smart_follow_button.setText('Smart Follow')
         self.camera_drone_lock_button.setEnabled(False)
         self.camera_drone_lock_button.setText('Захватить героя')
+        self.camera_orbit_button.setEnabled(False)
+        self.camera_orbit_button.setText('Включить Orbit')
+        self.camera_orbit_reverse_button.setEnabled(False)
+        self.camera_orbit_reverse_button.setText('Сменить направление Orbit')
+        self._sync_orbit_ring_controls(False, 1)
         self.camera_follow_button.setEnabled(self.camera_service.running)
         if self.camera_service.drone_enabled:
             self.camera_status.setText(message or 'Fly Drone · цель отпущена · свободный полёт')
@@ -2482,6 +2715,8 @@ class ReplayLabWindow(QMainWindow):
 
     def _seeker_started(self, operation: str) -> None:
         self.attach_button.setEnabled(False)
+        if operation == 'attach':
+            self.attach_button.setVisible(False)
         self.seek_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.seek_profile.setEnabled(False)
@@ -2504,7 +2739,7 @@ class ReplayLabWindow(QMainWindow):
         self.connection_label.setObjectName('connectionOnline')
         self.connection_label.style().unpolish(self.connection_label)
         self.connection_label.style().polish(self.connection_label)
-        self.attach_button.setText('Переподключить')
+        self.attach_button.setVisible(False)
         self.seek_button.setEnabled(self.report is not None)
         self.seek_status.setText(f"{result.build_profile or 'Warcraft III 1.26a'} · подключено")
         cache_note = ' · cache' if result.validation_cache_hit or result.replay_scan_strategy in {'open-session', 'session-cache'} else ''
@@ -2559,6 +2794,8 @@ class ReplayLabWindow(QMainWindow):
         replacements = {'war3.exe is not running': 'Warcraft III не запущен. Открой игру, запусти реплей и нажми подключение ещё раз.'}
         friendly = replacements.get(message, friendly)
         self.seek_status.setText(friendly)
+        if not self.seeker.attached:
+            self.attach_button.setVisible(True)
         QMessageBox.warning(self, 'Replay Seeker', friendly)
 
     def _seeker_soft_error(self, message: str) -> None:
@@ -2569,6 +2806,7 @@ class ReplayLabWindow(QMainWindow):
             return
         self._auto_attach_pid = None
         self.seek_status.setText(f'Instant Seek пока не готов: {message}')
+        self.attach_button.setVisible(True)
 
     def export_json(self) -> None:
         if self.report is None or self.current_path is None:

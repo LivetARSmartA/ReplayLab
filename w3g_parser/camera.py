@@ -8,7 +8,7 @@ from ctypes import wintypes
 from dataclasses import dataclass, replace
 from typing import Callable
 from .camera_input import CameraInputRouter
-from .camera_modes import CAMERA_TRANSITION_PRESETS, CameraTransitionKind, CameraTransitionSpec, CameraRigMode, DirectorFrame, SmartFollowDirector, hero_switch_transition
+from .camera_modes import CAMERA_TRANSITION_PRESETS, CameraTransitionKind, CameraTransitionSpec, CameraRigMode, DirectorFrame, OrbitDirector, SmartFollowDirector, hero_switch_transition
 from .native_camera import CameraSafetyLimits, CameraTransitionCommand, DroneInput, DroneSettings, NativeCameraHost, configured_camera_update_hz
 from .seeker import CameraState, SeekBackendError, Warcraft126MemoryBackend
 
@@ -24,6 +24,17 @@ class CameraMotionSettings:
 
 def standard_view_at(home: CameraState, current: CameraState) -> CameraState:
     return replace(home, target_x=current.target_x, target_y=current.target_y)
+
+def orbit_dolly_axis(distance: float, target_distance: float | None, target_velocity: float, dolly_speed: float) -> float:
+    if target_distance is None:
+        return 0.0
+    if not all((math.isfinite(value) for value in (distance, target_distance, target_velocity, dolly_speed))) or dolly_speed <= 0.0:
+        raise ValueError('Orbit dolly values are invalid')
+    error = target_distance - distance
+    if abs(error) < 0.75 and abs(target_velocity) < 1.0:
+        return 0.0
+    commanded_velocity = target_velocity * 0.4 + error
+    return min(max(commanded_velocity / dolly_speed, -1.0), 1.0)
 
 def camera_safety_limits(home: CameraState) -> CameraSafetyLimits:
 
@@ -79,7 +90,10 @@ class SmoothCameraController:
         self._drone_lock = threading.Lock()
         self._drone_enabled = False
         self._drone_target_lock = False
+        self._orbit_enabled = False
+        self._orbit_manual_dolly = False
         self._drone_settings = DroneSettings()
+        self._orbit_director = OrbitDirector()
         self._transition_lock = threading.Lock()
         self._transition: ActiveCameraTransition | None = None
         self._transition_return_state: CameraState | None = None
@@ -123,11 +137,28 @@ class SmoothCameraController:
             return self._drone_enabled and self._drone_target_lock
 
     @property
+    def orbit_enabled(self) -> bool:
+        with self._drone_lock:
+            return self._drone_enabled and self._drone_target_lock and self._orbit_enabled
+
+    @property
+    def orbit_direction(self) -> int:
+        with self._drone_lock:
+            return self._orbit_director.direction
+
+    @property
+    def orbit_ring_index(self) -> int:
+        with self._drone_lock:
+            return self._orbit_director.ring_index
+
+    @property
     def native_update_hz(self) -> int:
         return self._native_update_hz
 
     @property
     def rig_mode(self) -> CameraRigMode:
+        if self.orbit_enabled:
+            return CameraRigMode.ORBIT
         if self.drone_enabled:
             return CameraRigMode.DRONE
         with self._transition_lock:
@@ -159,6 +190,8 @@ class SmoothCameraController:
             self._settings = replace(current, **values)
 
     def update_drone_settings(self, settings: DroneSettings) -> None:
+        with self._drone_lock:
+            self._orbit_director.set_speed(settings.orbit_speed_degrees)
         with self._motion_lock:
             self._native.configure_drone(settings)
         with self._drone_lock:
@@ -179,6 +212,9 @@ class SmoothCameraController:
         with self._drone_lock:
             self._drone_enabled = not active
             self._drone_target_lock = False
+            self._orbit_enabled = False
+            self._orbit_manual_dolly = False
+            self._orbit_director.deactivate()
             enabled = self._drone_enabled
         if enabled:
             with self._follow_lock:
@@ -193,7 +229,43 @@ class SmoothCameraController:
             raise SeekBackendError('Сначала выбери героя в слотах Follow.')
         with self._drone_lock:
             self._drone_target_lock = not self._drone_target_lock
+            if not self._drone_target_lock:
+                self._orbit_enabled = False
+                self._orbit_manual_dolly = False
+                self._orbit_director.deactivate()
             return self._drone_target_lock
+
+    def toggle_orbit(self) -> bool:
+        if self._follow_address() is None:
+            raise SeekBackendError('Сначала выбери героя в слотах Follow.')
+        if not self.drone_enabled:
+            self.toggle_drone()
+        with self._motion_lock:
+            current = self._native.ping()
+        with self._drone_lock:
+            self._orbit_enabled = not self._orbit_enabled
+            if self._orbit_enabled:
+                self._drone_target_lock = True
+                self._orbit_manual_dolly = False
+                self._orbit_director.activate(current.distance, self._safety.distance_min, self._safety.distance_max)
+            else:
+                self._orbit_manual_dolly = False
+                self._orbit_director.deactivate()
+            return self._orbit_enabled
+
+    def reverse_orbit(self) -> int:
+        with self._drone_lock:
+            if not (self._drone_enabled and self._drone_target_lock and self._orbit_enabled):
+                raise SeekBackendError('Сначала включи Orbit.')
+            return self._orbit_director.reverse()
+
+    def shift_orbit_ring(self, step: int) -> int:
+        with self._motion_lock:
+            current = self._native.ping()
+        with self._drone_lock:
+            if not (self._drone_enabled and self._drone_target_lock and self._orbit_enabled):
+                raise SeekBackendError('Сначала включи Orbit.')
+            return self._orbit_director.shift_ring(step, current.distance)
 
     def turn_drone(self, angle_degrees: float) -> None:
         if not self.drone_enabled:
@@ -243,6 +315,9 @@ class SmoothCameraController:
             self._smart_follow = False
         with self._drone_lock:
             self._drone_target_lock = False
+            self._orbit_enabled = False
+            self._orbit_manual_dolly = False
+            self._orbit_director.deactivate()
             drone_enabled = self._drone_enabled
         self._input_router.set_follow_active(drone_enabled)
 
@@ -329,9 +404,27 @@ class SmoothCameraController:
         with self._follow_lock:
             return (self._follow_unit, self._smart_follow)
 
-    def _drone_mode(self) -> tuple[bool, bool]:
+    def _drone_mode(self) -> tuple[bool, bool, bool]:
         with self._drone_lock:
-            return (self._drone_enabled, self._drone_target_lock)
+            return (self._drone_enabled, self._drone_target_lock, self._orbit_enabled)
+
+    def _orbit_inputs(self, frame: DirectorFrame, manual_dolly: float) -> tuple[float, float]:
+        with self._drone_lock:
+            if not self._orbit_enabled:
+                return (0.0, manual_dolly)
+            if abs(manual_dolly) > 1e-06:
+                self._orbit_director.rebase(frame.distance)
+                self._orbit_manual_dolly = True
+            elif self._orbit_manual_dolly:
+                self._orbit_director.rebase(frame.distance)
+                self._orbit_manual_dolly = False
+            output = self._orbit_director.update(frame)
+            yaw_speed = self._drone_settings.yaw_speed
+            dolly_speed = self._drone_settings.dolly_speed
+        yaw_input = min(max(output.yaw_velocity / yaw_speed, -1.0), 1.0)
+        if abs(manual_dolly) > 1e-06:
+            return (yaw_input, manual_dolly)
+        return (yaw_input, orbit_dolly_axis(frame.distance, output.distance, output.distance_velocity, dolly_speed))
 
     def stop(self) -> None:
         self._stop.set()
@@ -341,6 +434,9 @@ class SmoothCameraController:
         with self._drone_lock:
             self._drone_enabled = False
             self._drone_target_lock = False
+            self._orbit_enabled = False
+            self._orbit_manual_dolly = False
+            self._orbit_director.deactivate()
         self._input_router.set_follow_active(False)
         self._native.close()
 
@@ -431,7 +527,7 @@ class SmoothCameraController:
                     vertical_input = 0.0
                 has_input = any((value for value in (forward_input, right_input, rotation_input, pitch_input, zoom_input, vertical_input)))
                 follow_address, smart_follow = self._follow_mode()
-                drone_enabled, drone_target_lock = self._drone_mode()
+                drone_enabled, drone_target_lock, orbit_enabled = self._drone_mode()
                 taking_control = not drone_enabled and idle and focused and (has_input or (follow_address is not None and (tracked_follow_address is None or regained_focus)))
                 if taking_control:
                     state = self._backend.camera_state()
@@ -491,8 +587,13 @@ class SmoothCameraController:
                         subject_y = state.target_y
                         subject_velocity_x = 0.0
                         subject_velocity_y = 0.0
+                    drone_rotation_input = rotation_input
+                    drone_dolly_input = zoom_input
+                    if orbit_enabled and drone_target_lock and (follow_position is not None):
+                        orbit_yaw_input, drone_dolly_input = self._orbit_inputs(DirectorFrame(yaw=state.yaw, pitch=state.pitch, distance=state.distance, z_offset=state.z_offset, subject_x=subject_x, subject_y=subject_y, velocity_x=subject_velocity_x, velocity_y=subject_velocity_y, delta_seconds=delta), zoom_input)
+                        drone_rotation_input = min(max(rotation_input + orbit_yaw_input, -1.0), 1.0)
                     with self._motion_lock:
-                        state = self._native.set_drone_input(DroneInput(forward=forward_input, strafe=right_input, lift=vertical_input, yaw=rotation_input, pitch=pitch_input, dolly=zoom_input, subject_x=subject_x, subject_y=subject_y, subject_velocity_x=subject_velocity_x, subject_velocity_y=subject_velocity_y, target_lock=drone_target_lock and follow_position is not None))
+                        state = self._native.set_drone_input(DroneInput(forward=forward_input, strafe=right_input, lift=vertical_input, yaw=drone_rotation_input, pitch=pitch_input, dolly=drone_dolly_input, subject_x=subject_x, subject_y=subject_y, subject_velocity_x=subject_velocity_x, subject_velocity_y=subject_velocity_y, target_lock=drone_target_lock and follow_position is not None))
                     idle = False
                     if self._on_state is not None and now - last_state_emit >= 0.2:
                         self._on_state(state)

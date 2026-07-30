@@ -82,6 +82,7 @@ class DroneSettings:
     lift_speed: float = 1400.0
     dolly_speed: float = 1800.0
     yaw_speed: float = 0.9
+    orbit_speed_degrees: float = 18.0
     pitch_speed: float = 0.65
     acceleration_response: float = 3.5
     braking_response: float = 6.0
