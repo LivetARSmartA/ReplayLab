@@ -363,6 +363,70 @@ class WarcraftReplayLauncher:
             raise WarcraftLaunchError('Warcraft выбрал current.w3g не в служебном каталоге ReplayLab.')
 
     @staticmethod
+    def _guard_log_candidates(launcher_path: Path, local_app_data: Path | None=None) -> tuple[Path, ...]:
+        launcher_directory = launcher_path.resolve().parent
+        candidates = [launcher_directory / '__log.txt']
+        if local_app_data is None:
+            local_app_data_value = os.environ.get('LOCALAPPDATA', '').strip()
+            if local_app_data_value:
+                local_app_data = Path(local_app_data_value)
+        if local_app_data is not None and launcher_directory.anchor:
+            try:
+                relative_directory = launcher_directory.relative_to(Path(launcher_directory.anchor))
+            except ValueError:
+                pass
+            else:
+                candidates.append(local_app_data / 'VirtualStore' / relative_directory / '__log.txt')
+        unique_candidates: list[Path] = []
+        known: set[str] = set()
+        for candidate in candidates:
+            key = str(candidate).casefold()
+            if key in known:
+                continue
+            known.add(key)
+            unique_candidates.append(candidate)
+        return tuple(unique_candidates)
+
+    @staticmethod
+    def _guard_log_snapshot(candidates: tuple[Path, ...]) -> tuple[dict[Path, tuple[int, int]], dict[Path, OSError]]:
+        snapshot: dict[Path, tuple[int, int]] = {}
+        errors: dict[Path, OSError] = {}
+        for candidate in candidates:
+            try:
+                with candidate.open('rb') as source:
+                    source.seek(0, os.SEEK_END)
+                    size = source.tell()
+                modified_ns = candidate.stat().st_mtime_ns
+            except (FileNotFoundError, NotADirectoryError):
+                continue
+            except OSError as exc:
+                errors[candidate] = exc
+                continue
+            snapshot[candidate] = (size, modified_ns)
+        return (snapshot, errors)
+
+    @classmethod
+    def _wait_for_guard_log(cls, candidates: tuple[Path, ...], baseline: dict[Path, tuple[int, int]], timeout_seconds: float=10.0) -> Path:
+        deadline = time.monotonic() + timeout_seconds
+        latest_snapshot: dict[Path, tuple[int, int]] = {}
+        latest_errors: dict[Path, OSError] = {}
+        while True:
+            latest_snapshot, latest_errors = cls._guard_log_snapshot(candidates)
+            changed = [candidate for candidate, state in latest_snapshot.items() if baseline.get(candidate) != state]
+            if changed:
+                return max(changed, key=lambda candidate: latest_snapshot[candidate][1])
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.1)
+        if latest_snapshot:
+            return max(latest_snapshot, key=lambda candidate: latest_snapshot[candidate][1])
+        if latest_errors:
+            candidate, error = next(iter(latest_errors.items()))
+            raise WarcraftLaunchError(f'Диагностический журнал iCCup найден, но ReplayLab не может его прочитать: {candidate} ({error})')
+        checked = '\n'.join((f'- {candidate}' for candidate in candidates))
+        raise WarcraftLaunchError(f'iCCup не создал диагностический журнал после запуска Warcraft. Проверены пути:\n{checked}')
+
+    @staticmethod
     def _read_guard_delta(guard_log: Path, start_offset: int) -> str:
         if not guard_log.is_file():
             raise WarcraftLaunchError(f'Не найден диагностический журнал iCCup: {guard_log}')
@@ -460,9 +524,8 @@ class WarcraftReplayLauncher:
                 raise WarcraftLaunchError('В iCCup Launcher не найдена кнопка «Один игрок».')
             if not buttons[0].is_enabled():
                 raise WarcraftLaunchError('Кнопка «Один игрок» в iCCup Launcher сейчас недоступна.')
-            guard_log = launcher_path.parent / '__log.txt'
-            if not guard_log.is_file():
-                raise WarcraftLaunchError(f'Не найден диагностический журнал iCCup: {guard_log}')
+            guard_candidates = self._guard_log_candidates(launcher_path)
+            guard_baseline, _ = self._guard_log_snapshot(guard_candidates)
             previous_pids = {process.pid for process in self.running()}
             buttons[0].invoke()
             with _WindowInputGuard(self._user32) as input_guard:
@@ -489,6 +552,7 @@ class WarcraftReplayLauncher:
                     time.sleep(0.05)
                 if game_window is None:
                     raise WarcraftLaunchError('Процесс Warcraft создан iCCup, но окно «Warcraft III» не появилось за 30 секунд.')
+                guard_log = self._wait_for_guard_log(guard_candidates, guard_baseline)
                 self._user32.ShowWindow(game_window.handle, self.SW_RESTORE)
                 with WarcraftGlueChannel(self._kernel32, self._user32, game_process.pid, game_window.handle, game) as channel:
                     self._open_staged_replay(channel, staging_directory)

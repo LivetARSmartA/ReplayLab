@@ -102,3 +102,41 @@ def hero_icon_path(hero_name: str | None) -> Path | None:
 
 def item_icon_path(item_name: str | None) -> Path | None:
     return _asset_path('items', item_name)
+
+@lru_cache(maxsize=1)
+def load_ability_icon_manifest() -> dict[str, str]:
+    manifest_path = project_root() / 'assets' / 'warcraft' / 'abilities' / 'manifest.json'
+    if not manifest_path.is_file():
+        return {}
+    try:
+        payload = json.loads(manifest_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    entries = payload.get('abilities', {})
+    if not isinstance(entries, dict):
+        return {}
+    return {rawcode: relative for rawcode, relative in entries.items() if isinstance(rawcode, str) and isinstance(relative, str)}
+
+def ability_icon_path(rawcode: str | None) -> Path | None:
+    if not rawcode:
+        return None
+    relative = load_ability_icon_manifest().get(rawcode)
+    if relative is None:
+        return None
+    path = project_root() / 'assets' / 'warcraft' / 'abilities' / relative
+    return path if path.is_file() else None
+
+def command_icon_path(command: str) -> Path | None:
+    manifest_path = project_root() / 'assets' / 'warcraft' / 'abilities' / 'manifest.json'
+    try:
+        payload = json.loads(manifest_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    entries = payload.get('commands', {})
+    if not isinstance(entries, dict):
+        return None
+    relative = entries.get(command)
+    if not isinstance(relative, str):
+        return None
+    path = manifest_path.parent / relative
+    return path if path.is_file() else None

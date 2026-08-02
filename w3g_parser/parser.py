@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 from .actions import decode_actions
+from .ability_profile import get_ability_profile
 from .dota_profile import DOTA_HERO_NAMES
 from .item_profile import get_item_definition
 REPLAY_SIGNATURE = b'Warcraft III recorded game\x1a\x00'
@@ -191,6 +192,30 @@ class ItemOrder:
     item_rawcode: str
     item_name: str | None
 
+@dataclass(frozen=True)
+class RecordedSkillLearnAction:
+    replay_time_ms: int
+    network_player_id: int
+    ability_rawcode: str
+
+@dataclass(frozen=True)
+class SkillLearnEvent:
+    replay_time_ms: int
+    game_time_ms: int
+    network_player_id: int
+    player_slot: int | None
+    player_name: str
+    hero_rawcode: str | None
+    hero_name: str | None
+    ability_rawcode: str
+    ability_name: str | None
+    ability_max_levels: int | None
+    new_level: int
+    source: str
+    confidence: str
+    ability_profile_id: str
+    is_pregame: bool
+
 @dataclass
 class DotaPlayerSnapshot:
     slot: int
@@ -277,6 +302,7 @@ class ReplayReport:
     dota_stats_snapshots: list[DotaStatsSnapshot] = field(default_factory=list)
     item_timings: list[ItemTiming] = field(default_factory=list)
     item_orders: list[ItemOrder] = field(default_factory=list)
+    skill_learns: list[SkillLearnEvent] = field(default_factory=list)
     kills: list[KillEvent] = field(default_factory=list)
     multi_kills: list[MultiKillEvent] = field(default_factory=list)
     block_counts: dict[str, int] = field(default_factory=dict)
@@ -286,11 +312,15 @@ class ReplayReport:
     action_decode_issues: dict[str, int] = field(default_factory=dict)
     apm_action_times: dict[int, list[int]] = field(default_factory=dict)
     pending_item_orders: list[tuple[int, int, str]] = field(default_factory=list)
+    pending_skill_menus: dict[int, int] = field(default_factory=dict)
+    pending_skill_learns: list[RecordedSkillLearnAction] = field(default_factory=list)
 
     def to_dict(self, include_packets: bool=False) -> dict[str, Any]:
         result = asdict(self)
         result.pop('apm_action_times', None)
         result.pop('pending_item_orders', None)
+        result.pop('pending_skill_menus', None)
+        result.pop('pending_skill_learns', None)
         if not include_packets:
             result['command_packet_count'] = len(self.command_packets)
             result.pop('command_packets', None)
@@ -523,6 +553,14 @@ def _parse_command_data(payload: bytes, time_ms: int, report: ReplayReport) -> N
                 report.apm_action_times.setdefault(player_id, []).append(time_ms)
             if action.ability_rawcode and action.ability_rawcode.startswith('I'):
                 report.pending_item_orders.append((time_ms, player_id, action.ability_rawcode))
+            if action.action_id == 102:
+                report.pending_skill_menus[player_id] = time_ms
+            elif player_id in report.pending_skill_menus:
+                submenu_time = report.pending_skill_menus.get(player_id)
+                if action.action_id == 16 and submenu_time is not None and (0 <= time_ms - submenu_time <= 2000) and (action.ability_rawcode is not None) and (action.ability_flags == 66) and (action.ability_object_id_1 == 4294967295) and (action.ability_object_id_2 == 4294967295):
+                    report.pending_skill_learns.append(RecordedSkillLearnAction(replay_time_ms=time_ms, network_player_id=player_id, ability_rawcode=action.ability_rawcode))
+                if submenu_time is None or time_ms - submenu_time > 2000 or action.action_id == 16:
+                    report.pending_skill_menus.pop(player_id, None)
             report._last_decoded_action = (player_id, action.action_id, action.selection_mode)
         if issue is not None:
             issue_key = f'0x{issue.action_id:02X}:{issue.reason}'
@@ -701,6 +739,21 @@ def _derive_dota_events(report: ReplayReport) -> None:
     _derive_item_timings(report, player_names)
     dota_by_slot = {player.slot: player for player in report.dota_players}
     slot_by_network_id = {player.network_player_id: player.slot for player in report.dota_players}
+    ability_profile = get_ability_profile(report.map_path)
+    if ability_profile is not None:
+        learned_levels: Counter[tuple[int, str]] = Counter()
+        for action in report.pending_skill_learns:
+            identity = (action.network_player_id, action.ability_rawcode)
+            new_level = learned_levels[identity] + 1
+            definition = ability_profile.abilities.get(action.ability_rawcode)
+            if definition is not None and new_level > definition.max_levels:
+                report.warnings.append(f'Ignored implausible skill level {action.ability_rawcode}:{new_level} for player {action.network_player_id}')
+                continue
+            learned_levels[identity] = new_level
+            slot = slot_by_network_id.get(action.network_player_id)
+            player = dota_by_slot.get(slot) if slot is not None else None
+            game_time_ms = action.replay_time_ms - game_start
+            report.skill_learns.append(SkillLearnEvent(replay_time_ms=action.replay_time_ms, game_time_ms=game_time_ms, network_player_id=action.network_player_id, player_slot=slot, player_name=player.name if player is not None else network_player_names.get(action.network_player_id, f'Player {action.network_player_id}'), hero_rawcode=player.hero_rawcode if player is not None else None, hero_name=player.hero_name if player is not None else None, ability_rawcode=action.ability_rawcode, ability_name=definition.name if definition is not None else None, ability_max_levels=definition.max_levels if definition is not None else None, new_level=new_level, source='recorded', confidence='strong-derived' if definition is not None else 'recorded-structural', ability_profile_id=ability_profile.profile_id, is_pregame=game_time_ms < 0))
     for dota_player in report.dota_players:
         mission_key = str(dota_player.slot)
         final_creep_times: list[int] = []

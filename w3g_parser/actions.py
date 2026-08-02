@@ -11,6 +11,9 @@ class DecodedAction:
     counts_for_apm: bool
     selection_mode: int | None = None
     ability_rawcode: str | None = None
+    ability_flags: int | None = None
+    ability_object_id_1: int | None = None
+    ability_object_id_2: int | None = None
 
 @dataclass(frozen=True)
 class ActionDecodeIssue:
@@ -69,12 +72,17 @@ def decode_actions(payload: bytes) -> tuple[list[DecodedAction], ActionDecodeIss
         action_id = payload[offset]
         selection_mode: int | None = None
         ability_rawcode: str | None = None
+        ability_flags: int | None = None
+        ability_object_id_1: int | None = None
+        ability_object_id_2: int | None = None
         try:
             if action_id == 6:
                 size = _read_cstring_end(payload, offset + 1) - offset
             elif action_id in (16, 17, 18, 19, 20):
                 size = _ability_size(action_id)
                 ability_rawcode = _decode_ability_rawcode(payload, offset)
+                ability_flags = struct.unpack_from('<H', payload, offset + 1)[0]
+                ability_object_id_1, ability_object_id_2 = struct.unpack_from('<II', payload, offset + 7)
             elif action_id in (22, 23):
                 if offset + 4 > len(payload):
                     raise ValueError('truncated selection header')
@@ -88,10 +96,10 @@ def decode_actions(payload: bytes) -> tuple[list[DecodedAction], ActionDecodeIss
                 size = _gamecache_size(payload, offset)
             else:
                 size = FIXED_SIZES_126[action_id]
-        except (KeyError, ValueError) as exc:
+        except (KeyError, ValueError, struct.error) as exc:
             return (actions, ActionDecodeIssue(offset=offset, action_id=action_id, reason=str(exc) or 'unknown action'))
         if size <= 0 or offset + size > len(payload):
             return (actions, ActionDecodeIssue(offset=offset, action_id=action_id, reason=f'action size {size} exceeds packet length'))
-        actions.append(DecodedAction(action_id=action_id, offset=offset, size=size, counts_for_apm=action_id in APM_ACTION_IDS, selection_mode=selection_mode, ability_rawcode=ability_rawcode))
+        actions.append(DecodedAction(action_id=action_id, offset=offset, size=size, counts_for_apm=action_id in APM_ACTION_IDS, selection_mode=selection_mode, ability_rawcode=ability_rawcode, ability_flags=ability_flags, ability_object_id_1=ability_object_id_1, ability_object_id_2=ability_object_id_2))
         offset += size
     return (actions, None)

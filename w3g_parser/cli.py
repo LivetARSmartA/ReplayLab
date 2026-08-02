@@ -5,12 +5,16 @@ from pathlib import Path
 from .parser import ReplayParseError, parse_replay
 
 def format_time(milliseconds: int) -> str:
+    sign = '−' if milliseconds < 0 else ''
+    milliseconds = abs(milliseconds)
     total_seconds, millis = divmod(milliseconds, 1000)
     minutes, seconds = divmod(total_seconds, 60)
     hours, minutes = divmod(minutes, 60)
     if hours:
-        return f'{hours:d}:{minutes:02d}:{seconds:02d}.{millis:03d}'
-    return f'{minutes:d}:{seconds:02d}.{millis:03d}'
+        value = f'{hours:d}:{minutes:02d}:{seconds:02d}.{millis:03d}'
+    else:
+        value = f'{minutes:d}:{seconds:02d}.{millis:03d}'
+    return sign + value
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Parse a Warcraft III .w3g replay without launching the game.')
@@ -18,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--json', type=Path, help='Write the complete report as JSON')
     parser.add_argument('--include-packets', action='store_true', help='Include every raw command-packet summary in JSON')
     parser.add_argument('--show-strings', action='store_true', help='Print candidate strings found inside player command streams')
-    parser.add_argument('--show-events', action='store_true', help='Print DotA kill events and derived multi-kills')
+    parser.add_argument('--show-events', action='store_true', help='Print DotA skill learns, kill events and derived multi-kills')
     parser.add_argument('--show-stats', action='store_true', help='Print the final DotA player statistics and APM')
     return parser
 
@@ -35,7 +39,7 @@ def main() -> int:
     print(f'Duration: {format_time(report.header.duration_ms)} (parsed timeline: {format_time(report.parsed_timeline_ms)})')
     print('Players: ' + ', '.join((f"{player.player_id}:{player.name or '(empty)'}" for player in report.players)))
     print(f'Commands: {len(report.command_packets)}, chats: {len(report.chats)}, gamecache syncs: {len(report.gamecache_syncs)}, candidate strings: {len(report.string_candidates)}')
-    print(f'DotA kills: {len(report.kills)}, triple/ultra/rampage events: {sum((event.count >= 3 for event in report.multi_kills))}')
+    print(f'DotA kills: {len(report.kills)}, skill learns: {len(report.skill_learns)}, triple/ultra/rampage events: {sum((event.count >= 3 for event in report.multi_kills))}')
     if report.dota_players:
         print('Heroes: ' + ', '.join((f"{player.name}={player.hero_name or player.hero_rawcode or '?'}" for player in report.dota_players)))
     if report.leaves:
@@ -44,6 +48,13 @@ def main() -> int:
         for item in report.string_candidates:
             print(f'[{format_time(item.time_ms)}] P{item.player_id} {item.source}: {item.text}')
     if arguments.show_events:
+        print('DotA skill-build timeline:')
+        for event in report.skill_learns:
+            player = event.player_name
+            if event.hero_name:
+                player += f' ({event.hero_name})'
+            ability = event.ability_name or event.ability_rawcode
+            print(f'[{format_time(event.game_time_ms)}] {player}: {ability} level {event.new_level} [{event.ability_rawcode}; {event.confidence}]')
         print('DotA kill timeline:')
         for event in report.kills:
             killer = event.killer_name
