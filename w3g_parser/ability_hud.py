@@ -8,8 +8,8 @@ import time
 from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Mapping, Sequence
-from PySide6.QtCore import QObject, QRectF, QTimer, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
+from PySide6.QtCore import QObject, QPointF, QRectF, QTimer, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QWidget
 from .ability_profile import AbilityDefinition
 from .assets import ability_icon_path, command_icon_path
@@ -22,6 +22,10 @@ TRANSIENT_TELEMETRY_STATUSES = frozenset({5, 6})
 COMMAND_CARD_COLUMNS = 4
 COMMAND_CARD_ROWS = 3
 COMMAND_CARD_CELLS = COMMAND_CARD_COLUMNS * COMMAND_CARD_ROWS
+CURSOR_BRIDGE_INTERVAL_MS = 8
+CURSOR_BRIDGE_WIDTH = 31
+CURSOR_BRIDGE_HEIGHT = 40
+CURSOR_BRIDGE_HOTSPOT = (3, 2)
 LOGGER = get_logger('skills_hud')
 
 class AbilityTelemetrySignals(QObject):
@@ -279,6 +283,74 @@ def command_card_geometry(client_width: int, client_height: int) -> tuple[int, i
     bottom_margin = max(1, round(client_height * 0.002))
     return (client_width - width - right_margin, client_height - height - bottom_margin, width, height)
 
+def cursor_is_over_overlay(cursor_x: int, cursor_y: int, overlay_left: int, overlay_top: int, overlay_width: int, overlay_height: int) -> bool:
+    return overlay_width > 0 and overlay_height > 0 and (overlay_left <= cursor_x < overlay_left + overlay_width) and (overlay_top <= cursor_y < overlay_top + overlay_height)
+
+class AbilityHudCursorWindow(QWidget):
+
+    def __init__(self) -> None:
+        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
+        super().__init__(None, flags)
+        self.setObjectName('abilityHudCursorBridge')
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setFixedSize(CURSOR_BRIDGE_WIDTH, CURSOR_BRIDGE_HEIGHT)
+        self._native_styles_applied = False
+
+    def show_at(self, cursor_x: int, cursor_y: int, *, raise_window: bool=False) -> None:
+        hotspot_x, hotspot_y = CURSOR_BRIDGE_HOTSPOT
+        next_x = cursor_x - hotspot_x
+        next_y = cursor_y - hotspot_y
+        if self.x() != next_x or self.y() != next_y:
+            self.move(next_x, next_y)
+        was_visible = self.isVisible()
+        if not was_visible:
+            self.show()
+            self._apply_native_styles()
+        if raise_window or not was_visible:
+            self.raise_()
+
+    def _apply_native_styles(self) -> None:
+        if os.name != 'nt' or self._native_styles_applied:
+            return
+        hwnd = int(self.winId())
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        get_style = user32.GetWindowLongPtrW
+        set_style = user32.SetWindowLongPtrW
+        get_style.argtypes = [wintypes.HWND, ctypes.c_int]
+        get_style.restype = ctypes.c_ssize_t
+        set_style.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+        set_style.restype = ctypes.c_ssize_t
+        ex_style = get_style(hwnd, -20)
+        set_style(hwnd, -20, ex_style | 32 | 134217728 | 128)
+        self._native_styles_applied = True
+
+    def paintEvent(self, _event: object) -> None:
+        pointer = QPainterPath(QPointF(3.0, 2.0))
+        pointer.lineTo(3.0, 29.0)
+        pointer.lineTo(9.0, 23.0)
+        pointer.lineTo(15.0, 37.0)
+        pointer.lineTo(21.0, 34.0)
+        pointer.lineTo(15.0, 21.0)
+        pointer.lineTo(27.0, 21.0)
+        pointer.closeSubpath()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 150))
+        painter.save()
+        painter.translate(2.0, 2.0)
+        painter.drawPath(pointer)
+        painter.restore()
+        painter.setPen(QPen(QColor(23, 17, 7, 245), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.setBrush(QColor('#f2d987'))
+        painter.drawPath(pointer)
+        painter.setPen(QPen(QColor('#fff4bd'), 1.0))
+        painter.drawLine(QPointF(6.0, 7.0), QPointF(6.0, 23.0))
+        painter.end()
+
 class AbilityTooltipWindow(QWidget):
 
     def __init__(self) -> None:
@@ -366,9 +438,14 @@ class AbilityHudWindow(QWidget):
         self._pixmap_cache: dict[str, QPixmap | None] = {}
         self._command_pixmap_cache: dict[str, QPixmap | None] = {}
         self._tooltip = AbilityTooltipWindow()
+        self._cursor_bridge = AbilityHudCursorWindow()
         self._position_timer = QTimer(self)
         self._position_timer.setInterval(50)
         self._position_timer.timeout.connect(self._sync_geometry)
+        self._cursor_timer = QTimer(self)
+        self._cursor_timer.setInterval(CURSOR_BRIDGE_INTERVAL_MS)
+        self._cursor_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._cursor_timer.timeout.connect(self._sync_cursor_bridge)
 
     @property
     def active(self) -> bool:
@@ -392,10 +469,13 @@ class AbilityHudWindow(QWidget):
         self._active = bool(active)
         if self._active:
             self._position_timer.start()
+            self._cursor_timer.start()
             self._sync_geometry()
         else:
             self._position_timer.stop()
+            self._cursor_timer.stop()
             self._tooltip.hide()
+            self._cursor_bridge.hide()
             self.hide()
 
     @staticmethod
@@ -433,6 +513,7 @@ class AbilityHudWindow(QWidget):
         client = self._foreground_client_rect(self._process_id)
         if client is None:
             self._tooltip.hide()
+            self._cursor_bridge.hide()
             self.hide()
             return
         left, top, client_width, client_height = client
@@ -443,6 +524,7 @@ class AbilityHudWindow(QWidget):
             self._apply_native_styles()
         self.raise_()
         self._sync_tooltip(left, top, client_width)
+        self._sync_cursor_bridge(force_raise=True)
 
     @staticmethod
     def _global_cursor_position() -> tuple[int, int] | None:
@@ -469,6 +551,16 @@ class AbilityHudWindow(QWidget):
         column = cell_index % COMMAND_CARD_COLUMNS
         anchor_x = round(self.x() + column * self.width() / COMMAND_CARD_COLUMNS)
         self._tooltip.show_ability(ability, anchor_x, self.y(), client_left, client_top, client_width)
+
+    def _sync_cursor_bridge(self, *, force_raise: bool=False) -> None:
+        if not self._active or not self.isVisible():
+            self._cursor_bridge.hide()
+            return
+        cursor = self._global_cursor_position()
+        if cursor is None or not cursor_is_over_overlay(cursor[0], cursor[1], self.x(), self.y(), self.width(), self.height()):
+            self._cursor_bridge.hide()
+            return
+        self._cursor_bridge.show_at(*cursor, raise_window=force_raise)
 
     def _apply_native_styles(self) -> None:
         if os.name != 'nt' or self._native_styles_applied:

@@ -11,6 +11,7 @@ from .actions import decode_actions
 from .ability_profile import get_ability_catalog, get_ability_profile
 from .dota_profile import DOTA_HERO_NAMES
 from .item_profile import get_item_definition
+from .statistics_timeline import RecordedCreepTimelineBundle, build_recorded_creep_timelines
 REPLAY_SIGNATURE = b'Warcraft III recorded game\x1a\x00'
 
 class ReplayParseError(ValueError):
@@ -175,6 +176,9 @@ class DotaPlayer:
     final_item_rawcodes: list[str | None] = field(default_factory=list)
     final_item_names: list[str | None] = field(default_factory=list)
     final_item_costs: list[int | None] = field(default_factory=list)
+    inventory_source: str | None = None
+    inventory_game_time_ms: int | None = None
+    inventory_layout_exact: bool = False
     net_worth: int | None = None
     net_worth_method: str | None = None
     apm_average: float | None = None
@@ -253,6 +257,7 @@ class DotaStatsSnapshot:
     game_time_ms: int
     winner: int | None
     players: list[DotaPlayerSnapshot]
+    complete: bool = True
 
 @dataclass
 class ItemTiming:
@@ -314,6 +319,7 @@ class ReplayReport:
     game_start_ms: int | None = None
     dota_players: list[DotaPlayer] = field(default_factory=list)
     dota_stats_snapshots: list[DotaStatsSnapshot] = field(default_factory=list)
+    recorded_creep_timelines: RecordedCreepTimelineBundle | None = None
     item_timings: list[ItemTiming] = field(default_factory=list)
     item_orders: list[ItemOrder] = field(default_factory=list)
     skill_learns: list[SkillLearnEvent] = field(default_factory=list)
@@ -682,14 +688,15 @@ def _apply_compact_creep_stat_fallback(report: ReplayReport, player: DotaPlayer)
     if not candidates:
         return
     event, counters = max(candidates, key=lambda item: item[0].time_ms)
-    changed = False
+    if player.creep_stats_source == 'final':
+        return
+    game_time_ms = max(event.time_ms - (report.game_start_ms or 0), 0)
+    if player.creep_stats_game_time_ms is not None and game_time_ms < player.creep_stats_game_time_ms:
+        return
     for attribute, value in zip(('creep_kills', 'creep_denies', 'neutral_kills'), counters):
-        if getattr(player, attribute) is None:
-            setattr(player, attribute, value)
-            changed = True
-    if changed and player.creep_stats_source is None:
-        player.creep_stats_source = 'leave-summary'
-        player.creep_stats_game_time_ms = max(event.time_ms - (report.game_start_ms or 0), 0)
+        setattr(player, attribute, value)
+    player.creep_stats_source = 'leave-summary'
+    player.creep_stats_game_time_ms = game_time_ms
 
 def _apply_short_replay_stat_fallbacks(report: ReplayReport) -> None:
     if report.kills:
@@ -773,8 +780,59 @@ def _rawcode_from_integer(value: int) -> str | None:
         return None
     return rawcode if re.fullmatch('[A-Za-z0-9]{4}', rawcode) else None
 
+def _decode_dota_snapshot_player(raw_player: object) -> DotaPlayerSnapshot | None:
+    if not isinstance(raw_player, dict):
+        return None
+    try:
+        compact_slot = int(raw_player.get('id', 0))
+        warcraft_slot = compact_slot + 1 if 6 <= compact_slot <= 10 else compact_slot
+        raw_items = raw_player.get('items', [])
+        items = [_rawcode_from_integer(value) for value in raw_items if isinstance(value, int)][:6]
+        items.extend([None] * (6 - len(items)))
+        return DotaPlayerSnapshot(slot=warcraft_slot, kills=int(raw_player.get('kills', 0)), deaths=int(raw_player.get('deaths', 0)), assists=int(raw_player.get('assists', 0)), creep_kills=int(raw_player.get('creep_kills', 0)), creep_denies=int(raw_player.get('creep_denies', 0)), neutral_kills=int(raw_player.get('neutral_kills', 0)), gold=int(raw_player.get('gold', 0)), item_rawcodes=items, tower_kills=int(raw_player.get('tower_kills', 0)), rax_kills=int(raw_player.get('rax_kills', 0)), courier_kills=int(raw_player.get('courier_kills', 0)), left_time=int(raw_player.get('left_time', 0)))
+    except (TypeError, ValueError):
+        return None
+
+def _decode_dota_snapshot_players(raw_players: object) -> list[DotaPlayerSnapshot]:
+    if not isinstance(raw_players, list):
+        return []
+    return [player for raw_player in raw_players if (player := _decode_dota_snapshot_player(raw_player)) is not None]
+
+def _decode_complete_player_prefix(raw_json: str) -> list[DotaPlayerSnapshot]:
+    marker = re.search('"players"\\s*:\\s*\\[', raw_json)
+    if marker is None:
+        return []
+    decoder = json.JSONDecoder()
+    cursor = marker.end()
+    players: list[DotaPlayerSnapshot] = []
+    while cursor < len(raw_json):
+        while cursor < len(raw_json) and raw_json[cursor] in ' \t\r\n,':
+            cursor += 1
+        if cursor >= len(raw_json) or raw_json[cursor] == ']':
+            break
+        try:
+            raw_player, cursor = decoder.raw_decode(raw_json, cursor)
+        except json.JSONDecodeError:
+            break
+        player = _decode_dota_snapshot_player(raw_player)
+        if player is None:
+            break
+        players.append(player)
+    return players
+
+def _partial_snapshots_agree(candidates: list[DotaStatsSnapshot]) -> bool:
+    seen: dict[int, DotaPlayerSnapshot] = {}
+    for snapshot in candidates:
+        for player in snapshot.players:
+            previous = seen.get(player.slot)
+            if previous is not None and previous != player:
+                return False
+            seen[player.slot] = player
+    return True
+
 def _extract_dota_stats_snapshots(report: ReplayReport, game_start_ms: int) -> list[DotaStatsSnapshot]:
     buffers: dict[int, str] = {}
+    buffer_times: dict[int, int] = {}
     candidates: dict[int, list[DotaStatsSnapshot]] = defaultdict(list)
     marker_re = re.compile('end\\s+(\\d+)$')
     for event in report.gamecache_syncs:
@@ -783,33 +841,34 @@ def _extract_dota_stats_snapshots(report: ReplayReport, game_start_ms: int) -> l
         marker = marker_re.fullmatch(event.key)
         if event.key.startswith('{'):
             buffers[event.player_id] = event.key
+            buffer_times[event.player_id] = event.time_ms
             continue
         if marker is None:
             if event.player_id in buffers:
                 buffers[event.player_id] += event.key
+                buffer_times[event.player_id] = event.time_ms
             continue
         raw_json = buffers.pop(event.player_id, '')
+        buffer_times.pop(event.player_id, None)
         if not raw_json:
             continue
         try:
             payload = json.loads(raw_json)
         except (json.JSONDecodeError, TypeError):
             continue
-        raw_players = payload.get('players')
-        if not isinstance(raw_players, list):
+        players = _decode_dota_snapshot_players(payload.get('players'))
+        if not players:
             continue
-        players: list[DotaPlayerSnapshot] = []
-        for raw_player in raw_players:
-            if not isinstance(raw_player, dict):
-                continue
-            raw_items = raw_player.get('items', [])
-            items = [_rawcode_from_integer(value) for value in raw_items if isinstance(value, int)][:6]
-            items.extend([None] * (6 - len(items)))
-            players.append(DotaPlayerSnapshot(slot=int(raw_player.get('id', 0)), kills=int(raw_player.get('kills', 0)), deaths=int(raw_player.get('deaths', 0)), assists=int(raw_player.get('assists', 0)), creep_kills=int(raw_player.get('creep_kills', 0)), creep_denies=int(raw_player.get('creep_denies', 0)), neutral_kills=int(raw_player.get('neutral_kills', 0)), gold=int(raw_player.get('gold', 0)), item_rawcodes=items, tower_kills=int(raw_player.get('tower_kills', 0)), rax_kills=int(raw_player.get('rax_kills', 0)), courier_kills=int(raw_player.get('courier_kills', 0)), left_time=int(raw_player.get('left_time', 0))))
         sequence = int(marker.group(1))
         winner = payload.get('winner')
         candidates[sequence].append(DotaStatsSnapshot(sequence=sequence, replay_time_ms=event.time_ms, game_time_ms=max(event.time_ms - game_start_ms, 0), winner=int(winner) if isinstance(winner, int) else None, players=players))
-    snapshots = [min(sequence_candidates, key=lambda snapshot: snapshot.replay_time_ms) for _, sequence_candidates in sorted(candidates.items())]
+    snapshots: list[DotaStatsSnapshot] = [min(sequence_candidates, key=lambda snapshot: snapshot.replay_time_ms) for _, sequence_candidates in sorted(candidates.items())]
+    partial_sequence = max(candidates, default=0) + 1
+    partial_candidates = [DotaStatsSnapshot(sequence=partial_sequence, replay_time_ms=buffer_times[player_id], game_time_ms=max(buffer_times[player_id] - game_start_ms, 0), winner=None, players=players, complete=False) for player_id, raw_json in buffers.items() if (players := _decode_complete_player_prefix(raw_json))]
+    if partial_candidates and _partial_snapshots_agree(partial_candidates):
+        snapshots.append(max(partial_candidates, key=lambda snapshot: (len(snapshot.players), snapshot.replay_time_ms)))
+    elif partial_candidates:
+        report.warnings.append('Ignored conflicting complete player records inside truncated game_stats streams')
     return snapshots
 
 def _derive_item_timings(report: ReplayReport, player_names: dict[int, str]) -> None:
@@ -824,6 +883,90 @@ def _derive_item_timings(report: ReplayReport, player_names: dict[int, str]) -> 
                     report.item_timings.append(ItemTiming(player_slot=player.slot, player_name=player_names.get(player.slot, f'Player {player.slot}'), item_rawcode=rawcode, item_name=get_item_definition(rawcode).name if get_item_definition(rawcode) is not None else None, earliest_game_time_ms=previous_time[player.slot], latest_game_time_ms=snapshot.game_time_ms, precision='snapshot-window'))
             previous_items[player.slot] = current
             previous_time[player.slot] = snapshot.game_time_ms
+
+def _latest_snapshot_player(report: ReplayReport, player_slot: int) -> tuple[DotaStatsSnapshot, DotaPlayerSnapshot] | None:
+    for snapshot in reversed(report.dota_stats_snapshots):
+        for player in snapshot.players:
+            if player.slot == player_slot:
+                return (snapshot, player)
+    return None
+
+def _apply_snapshot_creep_stats(report: ReplayReport, player: DotaPlayer) -> None:
+    match = _latest_snapshot_player(report, player.slot)
+    if match is None or player.creep_stats_source == 'final':
+        return
+    snapshot, snapshot_player = match
+    if player.creep_stats_game_time_ms is not None and snapshot.game_time_ms < player.creep_stats_game_time_ms:
+        return
+    player.creep_kills = snapshot_player.creep_kills
+    player.creep_denies = snapshot_player.creep_denies
+    player.neutral_kills = snapshot_player.neutral_kills
+    player.creep_stats_source = 'game-stats-json' if snapshot.complete else 'game-stats-partial-player'
+    player.creep_stats_game_time_ms = snapshot.game_time_ms
+
+def _apply_inventory_snapshot(report: ReplayReport, player: DotaPlayer, game_start_ms: int) -> None:
+    item_events = [_latest_sync(report, str(player.slot), f'8_{index}') for index in range(6)]
+    if all((event is not None for event in item_events)):
+        player.final_item_rawcodes = [_rawcode_from_sync(event) for event in item_events]
+        player.inventory_source = 'final-table'
+        player.inventory_layout_exact = True
+        player.inventory_game_time_ms = max(max((event.time_ms for event in item_events if event is not None)) - game_start_ms, 0)
+    else:
+        match = _latest_snapshot_player(report, player.slot)
+        if match is None:
+            player.final_item_rawcodes = [None] * 6
+        else:
+            snapshot, snapshot_player = match
+            player.final_item_rawcodes = list(snapshot_player.item_rawcodes)
+            player.inventory_source = 'game-stats-json' if snapshot.complete else 'game-stats-partial-player'
+            player.inventory_layout_exact = True
+            player.inventory_game_time_ms = snapshot.game_time_ms
+    if player.inventory_source is None:
+        recorded = _recorded_inventory_state(report, player.slot, game_start_ms)
+        if recorded is not None:
+            item_rawcodes, game_time_ms = recorded
+            player.final_item_rawcodes = item_rawcodes
+            player.inventory_source = 'recorded-item-ledger'
+            player.inventory_game_time_ms = game_time_ms
+    item_definitions = [get_item_definition(rawcode) for rawcode in player.final_item_rawcodes]
+    player.final_item_names = [definition.name if definition is not None else None for definition in item_definitions]
+    player.final_item_costs = [definition.cost if definition is not None else None for definition in item_definitions]
+    if player.inventory_source is not None and all((rawcode is None or definition is not None for rawcode, definition in zip(player.final_item_rawcodes, item_definitions))):
+        player.inventory_value = sum((definition.cost for definition in item_definitions if definition is not None))
+        if player.final_gold is not None:
+            player.net_worth = player.final_gold + player.inventory_value
+            player.net_worth_method = 'final_gold_plus_six_slot_inventory'
+
+def _recorded_inventory_state(report: ReplayReport, player_slot: int, game_start_ms: int) -> tuple[list[str | None], int] | None:
+    inventory: list[str] = []
+    observed = False
+    latest_time_ms = 0
+    seen_syncs: set[tuple[int, str, str]] = set()
+    key_pattern = re.compile('^(PUI|DRI)_(\\d+)$')
+    for event in report.gamecache_syncs:
+        if event.cache_name != 'dr.x' or event.mission_key != 'Data':
+            continue
+        match = key_pattern.fullmatch(event.key)
+        if match is None or int(match.group(2)) != player_slot:
+            continue
+        rawcode = _rawcode_from_sync(event)
+        if rawcode is None:
+            continue
+        identity = (event.time_ms, event.key, rawcode)
+        if identity in seen_syncs:
+            continue
+        seen_syncs.add(identity)
+        observed = True
+        latest_time_ms = max(latest_time_ms, event.time_ms)
+        if match.group(1) == 'PUI':
+            inventory.append(rawcode)
+        elif rawcode in inventory:
+            inventory.remove(rawcode)
+    if not observed or len(inventory) > 6:
+        return None
+    result: list[str | None] = list(inventory)
+    result.extend([None] * (6 - len(result)))
+    return (result, max(latest_time_ms - game_start_ms, 0))
 
 def _derive_dota_events(report: ReplayReport) -> None:
     network_player_names = {player.player_id: player.name or f'Player {player.player_id}' for player in report.players}
@@ -841,6 +984,9 @@ def _derive_dota_events(report: ReplayReport) -> None:
     report.game_start_ms = min(start_events) if start_events else None
     game_start = report.game_start_ms or 0
     report.dota_stats_snapshots = _extract_dota_stats_snapshots(report, game_start)
+    roster_slots = {player.slot for player in report.dota_players}
+    for snapshot in report.dota_stats_snapshots:
+        snapshot.players = [player for player in snapshot.players if player.slot in roster_slots]
     _derive_item_timings(report, player_names)
     dota_by_slot = {player.slot: player for player in report.dota_players}
     slot_by_network_id = {player.network_player_id: player.slot for player in report.dota_players}
@@ -874,15 +1020,8 @@ def _derive_dota_events(report: ReplayReport) -> None:
             dota_player.creep_stats_game_time_ms = max(max(final_creep_times) - game_start, 0)
         _apply_live_creep_stat_fallback(report, dota_player)
         _apply_compact_creep_stat_fallback(report, dota_player)
-        dota_player.final_item_rawcodes = [_rawcode_from_sync(_latest_sync(report, mission_key, f'8_{index}')) for index in range(6)]
-        item_definitions = [get_item_definition(rawcode) for rawcode in dota_player.final_item_rawcodes]
-        dota_player.final_item_names = [definition.name if definition is not None else None for definition in item_definitions]
-        dota_player.final_item_costs = [definition.cost if definition is not None else None for definition in item_definitions]
-        if all((rawcode is None or definition is not None for rawcode, definition in zip(dota_player.final_item_rawcodes, item_definitions))):
-            dota_player.inventory_value = sum((definition.cost for definition in item_definitions if definition is not None))
-            if dota_player.final_gold is not None:
-                dota_player.net_worth = dota_player.final_gold + dota_player.inventory_value
-                dota_player.net_worth_method = 'final_gold_plus_six_slot_inventory'
+        _apply_snapshot_creep_stats(report, dota_player)
+        _apply_inventory_snapshot(report, dota_player, game_start)
         dota_player.side = 'Sentinel' if dota_player.slot <= 5 else 'Scourge'
         leave_times = [event.time_ms for event in report.leaves if event.player_id == dota_player.network_player_id and event.time_ms > game_start]
         end_time = min(leave_times) if leave_times else report.parsed_timeline_ms
@@ -941,6 +1080,7 @@ def _derive_dota_events(report: ReplayReport) -> None:
         label = MULTI_KILL_LABELS.get(count, 'Rampage')
         report.multi_kills.append(MultiKillEvent(replay_time_ms=kill.replay_time_ms, game_time_ms=kill.game_time_ms, killer_id=kill.killer_id, killer_name=kill.killer_name, killer_hero_rawcode=kill.killer_hero_rawcode, killer_hero_name=kill.killer_hero_name, count=count, label=label, victim_ids=[event.victim_id for event in chain], victim_names=[event.victim_name for event in chain], chain_start_game_time_ms=chain[0].game_time_ms))
     _apply_short_replay_stat_fallbacks(report)
+    report.recorded_creep_timelines = build_recorded_creep_timelines(report)
 
 def parse_replay(path: str | Path) -> ReplayReport:
     source = Path(path)
