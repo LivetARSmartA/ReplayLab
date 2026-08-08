@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Callable
 from PySide6.QtCore import QAbstractAnimation, QEasingCurve, Property, QPropertyAnimation, QRectF, QSettings, QSize, QTimer, Qt, QThreadPool, QRunnable, Signal, Slot, QObject
 from PySide6.QtGui import QColor, QCloseEvent, QIcon, QLinearGradient, QPainter, QPen, QPixmap, QRadialGradient, QWheelEvent
-from PySide6.QtWidgets import QApplication, QAbstractScrollArea, QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget, QListWidgetItem, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QScrollBar, QSlider, QSpinBox, QSplitter, QStyle, QStyleOptionSlider, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
-from .assets import app_icon_path, hero_icon_path, item_icon_path, release_build_id
+from PySide6.QtWidgets import QApplication, QAbstractScrollArea, QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget, QListWidgetItem, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QScrollBar, QSlider, QSpinBox, QSplitter, QStyle, QStyleOptionSlider, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from .assets import app_icon_path, compact_build_id, hero_icon_path, item_icon_path, release_build_id
 from .ability_hud import AbilityHudSelectionArbiter, AbilityHudWindow, AbilityTelemetryService
 from .ability_profile import AbilityDefinition, get_ability_catalog, get_ability_profile
 from .camera import CameraMotionSettings, SmoothCameraController
@@ -27,6 +27,34 @@ from .settings import discover_replays, forget_failed_replay, recover_persistent
 LOGGER = get_logger('ui')
 APP_NAME = 'Warcraft III Replay Lab'
 CAMERA_HERO_SLOT_COUNT = 10
+
+def apply_dark_windows_title_bar(window: QWidget) -> bool:
+    if sys.platform != 'win32':
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        hwnd = wintypes.HWND(int(window.winId()))
+        set_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        set_attribute.argtypes = (wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD)
+        set_attribute.restype = ctypes.c_long
+        enabled = wintypes.BOOL(True)
+        dark_result = -1
+        for attribute in (20, 19):
+            dark_result = set_attribute(hwnd, attribute, ctypes.byref(enabled), ctypes.sizeof(enabled))
+            if dark_result == 0:
+                break
+        colors = {34: 3153683, 35: 1445384, 36: 15919064}
+        for attribute, value in colors.items():
+            color = wintypes.DWORD(value)
+            set_attribute(hwnd, attribute, ctypes.byref(color), ctypes.sizeof(color))
+        redraw_window = ctypes.windll.user32.RedrawWindow
+        redraw_window.argtypes = (wintypes.HWND, ctypes.c_void_p, ctypes.c_void_p, wintypes.UINT)
+        redraw_window.restype = wintypes.BOOL
+        redraw_window(hwnd, None, None, 1025)
+        return dark_result == 0
+    except (AttributeError, OSError, TypeError, ValueError):
+        return False
 CAMERA_CORE_MACRO_ACTIONS = (('toggle_camera', 'Камера: вкл / выкл', 119), ('follow_toggle', 'Follow: вкл / выкл', 118), ('smart_follow_toggle', 'Smart Follow', 116), ('reset_view', 'Вернуть обзор', 120))
 CAMERA_DRONE_MACRO_ACTIONS = (('drone_toggle', 'Fly Drone: вкл / выкл', 66), ('drone_target_lock', 'Drone: захват цели', 78), ('orbit_toggle', 'Orbit: вкл / выкл', 104), ('orbit_reverse', 'Orbit: сменить направление', 98), ('orbit_in', 'Orbit: ближнее кольцо', 103), ('orbit_out', 'Orbit: дальнее кольцо', 105), ('drone_turn_left', 'Drone: поворот влево 90°', 100), ('drone_turn_around', 'Drone: разворот 180°', 101), ('drone_turn_right', 'Drone: поворот вправо 90°', 102), ('drone_height_up', 'Drone: набрать высоту', 97), ('drone_height_down', 'Drone: сбросить высоту', 96))
 DRONE_TURN_DEGREES = {'drone_turn_left': 90.0, 'drone_turn_around': 180.0, 'drone_turn_right': -90.0}
@@ -760,7 +788,7 @@ class TimelineSlider(QSlider):
         self.setMaximum(1)
         self.setSingleStep(1000)
         self.setPageStep(10000)
-        self.setMinimumHeight(46)
+        self.setMinimumHeight(54)
 
     def set_events(self, events: list[ReplayMoment], duration_game_ms: int) -> None:
         self._events = list(events)
@@ -770,13 +798,23 @@ class TimelineSlider(QSlider):
 
     def paintEvent(self, event: object) -> None:
         super().paintEvent(event)
-        if not self._events or self.maximum() <= 0:
+        if self.maximum() <= 0:
             return
         option = QStyleOptionSlider()
         self.initStyleOption(option)
         groove = self.style().subControlRect(QStyle.ComplexControl.CC_Slider, option, QStyle.SubControl.SC_SliderGroove, self)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor(103, 142, 174, 58), 1))
+        for index in range(9):
+            ratio = index / 8.0
+            x = groove.left() + round(ratio * groove.width())
+            length = 7 if index % 2 == 0 else 4
+            painter.drawLine(x, groove.bottom() + 8, x, groove.bottom() + 8 + length)
+        current_ratio = min(max((self.value() - self.minimum()) / max(self.maximum() - self.minimum(), 1), 0.0), 1.0)
+        current_x = groove.left() + round(current_ratio * groove.width())
+        painter.setPen(QPen(QColor(111, 205, 255, 92), 1))
+        painter.drawLine(current_x, groove.top() - 12, current_x, groove.bottom() + 16)
         for moment in self._events:
             ratio = min(max(moment.game_time_ms / self.maximum(), 0), 1)
             x = groove.left() + round(ratio * groove.width())
@@ -784,6 +822,110 @@ class TimelineSlider(QSlider):
             width = 3 if moment.kind != ReplayMomentKind.KILL else 1
             painter.setPen(QPen(color, width))
             painter.drawLine(x, groove.top() - 8, x, groove.bottom() + 8)
+
+class TemporalFingerprint(QWidget):
+    BIN_COUNT = 36
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName('temporalFingerprint')
+        self.setMinimumSize(210, 40)
+        self.setMaximumHeight(40)
+        self.setMaximumWidth(270)
+        self._bins = [0.0] * self.BIN_COUNT
+        self._hot_bins: set[int] = set()
+        self._phase = 0.0
+        self._active = False
+        self._scan_animation = QPropertyAnimation(self, b'scanPhase', self)
+        self._scan_animation.setStartValue(0.0)
+        self._scan_animation.setEndValue(1.0)
+        self._scan_animation.setDuration(2900)
+        self._scan_animation.setLoopCount(-1)
+        self._scan_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+
+    def _get_scan_phase(self) -> float:
+        return self._phase
+
+    def _set_scan_phase(self, value: float) -> None:
+        self._phase = float(value)
+        self.update()
+    scanPhase = Property(float, _get_scan_phase, _set_scan_phase)
+
+    def clear(self) -> None:
+        self._bins = [0.0] * self.BIN_COUNT
+        self._hot_bins.clear()
+        self.set_active(False)
+
+    def set_events(self, events: list[ReplayMoment], duration_game_ms: int) -> None:
+        bins = [0.0] * self.BIN_COUNT
+        hot_bins: set[int] = set()
+        duration = max(duration_game_ms, 1)
+        for moment in events:
+            ratio = min(max(moment.game_time_ms / duration, 0.0), 1.0)
+            index = min(round(ratio * (self.BIN_COUNT - 1)), self.BIN_COUNT - 1)
+            weight = 1.0 + min(max(moment.severity, 0), 3) * 0.45
+            bins[index] += weight
+            if moment.kind == ReplayMomentKind.FIRST_BLOOD or moment.severity >= 3:
+                hot_bins.add(index)
+        peak = max(bins, default=0.0)
+        self._bins = [value / peak if peak else 0.0 for value in bins]
+        self._hot_bins = hot_bins
+        self.set_active(bool(events))
+
+    def set_active(self, active: bool) -> None:
+        self._active = bool(active)
+        if self._active:
+            if self._scan_animation.state() != QAbstractAnimation.State.Running:
+                self._scan_animation.start()
+        else:
+            self._scan_animation.stop()
+            self._phase = 0.0
+            self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        frame = self.rect().adjusted(0, 0, -1, -1)
+        painter.setPen(QPen(QColor(42, 86, 108, 170), 1))
+        painter.setBrush(QColor(5, 17, 25, 178))
+        painter.drawRoundedRect(frame, 8, 8)
+        left = 12.0
+        right = max(self.width() - 12.0, left + 1.0)
+        center_y = self.height() * 0.56
+        span = right - left
+        painter.setPen(QPen(QColor(72, 130, 157, 62), 1))
+        painter.drawLine(round(left), round(center_y), round(right), round(center_y))
+        for index in range(5):
+            x = left + span * index / 4.0
+            painter.drawLine(round(x), round(center_y + 15), round(x), round(center_y + 18))
+        if any(self._bins):
+            step = span / max(self.BIN_COUNT - 1, 1)
+            for index, intensity in enumerate(self._bins):
+                if intensity <= 0.0:
+                    continue
+                x = left + index * step
+                amplitude = 4.0 + intensity * 13.0
+                color = QColor(239, 185, 76, 210) if index in self._hot_bins else QColor(79, 190, 232, 195)
+                halo = QColor(color)
+                halo.setAlpha(36)
+                painter.setPen(QPen(halo, 4))
+                painter.drawLine(round(x), round(center_y - amplitude), round(x), round(center_y + amplitude))
+                painter.setPen(QPen(color, 1.4))
+                painter.drawLine(round(x), round(center_y - amplitude), round(x), round(center_y + amplitude))
+        else:
+            painter.setPen(QPen(QColor(74, 113, 135, 82), 1))
+            for index in range(12):
+                x = left + span * index / 11.0
+                painter.drawPoint(round(x), round(center_y))
+        if self._active:
+            scan_x = left + span * self._phase
+            scan = QLinearGradient(scan_x - 25, 0, scan_x + 25, 0)
+            scan.setColorAt(0.0, QColor(92, 211, 245, 0))
+            scan.setColorAt(0.5, QColor(92, 211, 245, 28))
+            scan.setColorAt(1.0, QColor(92, 211, 245, 0))
+            painter.fillRect(QRectF(scan_x - 25, 3, 50, self.height() - 6), scan)
+            painter.setPen(QPen(QColor(133, 231, 250, 110), 1))
+            painter.drawLine(round(scan_x), 7, round(scan_x), self.height() - 7)
 
 class ObsidianSurface(QWidget):
 
@@ -800,19 +942,175 @@ class ObsidianSurface(QWidget):
         glow.setColorAt(0.48, QColor(28, 75, 119, 15))
         glow.setColorAt(1.0, QColor(8, 13, 20, 0))
         painter.fillRect(self.rect(), glow)
+        ember = QRadialGradient(self.width() * 0.08, self.height() * 0.96, max(self.width() * 0.38, 360.0))
+        ember.setColorAt(0.0, QColor(143, 92, 36, 13))
+        ember.setColorAt(0.5, QColor(88, 55, 24, 5))
+        ember.setColorAt(1.0, QColor(8, 13, 20, 0))
+        painter.fillRect(self.rect(), ember)
         painter.setPen(QPen(QColor(87, 127, 164, 12), 1))
         grid_size = 56
         for x in range(0, self.width(), grid_size):
             painter.drawLine(x, 0, x, self.height())
         for y in range(0, self.height(), grid_size):
             painter.drawLine(0, y, self.width(), y)
+        painter.setPen(QPen(QColor(88, 137, 171, 8), 1))
+        diagonal_span = round(self.height() * 0.32)
+        for offset in range(-self.height(), self.width(), 224):
+            painter.drawLine(offset, self.height(), offset + diagonal_span, 0)
         center_x = self.width() - 126
         center_y = 70
         painter.setPen(QPen(QColor(92, 157, 214, 22), 1))
         for radius in (44, 72, 102):
             painter.drawEllipse(QRectF(center_x - radius, center_y - radius, radius * 2, radius * 2))
+        for index in range(24):
+            angle = math.tau * index / 24.0
+            inner = 106 if index % 3 == 0 else 110
+            outer = 116
+            painter.drawLine(round(center_x + math.cos(angle) * inner), round(center_y + math.sin(angle) * inner), round(center_x + math.cos(angle) * outer), round(center_y + math.sin(angle) * outer))
         painter.drawLine(center_x - 116, center_y, center_x + 116, center_y)
         painter.drawLine(center_x, center_y - 116, center_x, center_y + 116)
+
+class SignalPulse(QWidget):
+    COLORS = {'idle': QColor('#60758a'), 'busy': QColor('#62b9ff'), 'online': QColor('#6de6b2'), 'error': QColor('#ff7e70')}
+
+    def __init__(self, parent: QWidget | None=None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(18, 18)
+        self._phase = 0.0
+        self._state = 'idle'
+        self._animation = QPropertyAnimation(self, b'phase', self)
+        self._animation.setStartValue(0.0)
+        self._animation.setEndValue(1.0)
+        self._animation.setDuration(1800)
+        self._animation.setLoopCount(-1)
+        self._animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._animation.start()
+
+    def _get_phase(self) -> float:
+        return self._phase
+
+    def _set_phase(self, value: float) -> None:
+        self._phase = float(value)
+        self.update()
+    phase = Property(float, _get_phase, _set_phase)
+
+    def set_state(self, state: str) -> None:
+        self._state = state if state in self.COLORS else 'idle'
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor(self.COLORS[self._state])
+        radius = 4.0 + self._phase * 3.4
+        halo = QColor(color)
+        halo.setAlpha(round(74 * (1.0 - self._phase)))
+        painter.setPen(QPen(halo, 1.0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(QRectF(self.width() / 2.0 - radius, self.height() / 2.0 - radius, radius * 2.0, radius * 2.0))
+        core = QColor(color)
+        core.setAlpha(225)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(core)
+        painter.drawEllipse(QRectF(self.width() / 2.0 - 2.3, self.height() / 2.0 - 2.3, 4.6, 4.6))
+
+class TemporalStatusNode(QFrame):
+
+    def __init__(self, title: str, value: str) -> None:
+        super().__init__()
+        self.setObjectName('temporalStatusNode')
+        self.setProperty('signal', 'idle')
+        self.setMinimumWidth(132)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 7, 11, 7)
+        layout.setSpacing(7)
+        self.pulse = SignalPulse(self)
+        layout.addWidget(self.pulse)
+        labels = QVBoxLayout()
+        labels.setSpacing(0)
+        title_label = QLabel(title)
+        title_label.setObjectName('temporalNodeTitle')
+        self.value_label = QLabel(value)
+        self.value_label.setObjectName('temporalNodeValue')
+        labels.addWidget(title_label)
+        labels.addWidget(self.value_label)
+        layout.addLayout(labels, 1)
+
+    def set_value(self, value: str, state: str='idle') -> None:
+        self.value_label.setText(value)
+        self.pulse.set_state(state)
+        self.setProperty('signal', state)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+class TemporalContextBar(QFrame):
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName('temporalContextBar')
+        self._scan_phase = 0.0
+        self._active = False
+        self._scan_animation = QPropertyAnimation(self, b'scanPhase', self)
+        self._scan_animation.setStartValue(0.0)
+        self._scan_animation.setEndValue(1.0)
+        self._scan_animation.setDuration(3800)
+        self._scan_animation.setLoopCount(-1)
+        self._scan_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+
+    def _get_scan_phase(self) -> float:
+        return self._scan_phase
+
+    def _set_scan_phase(self, value: float) -> None:
+        self._scan_phase = float(value)
+        self.update()
+    scanPhase = Property(float, _get_scan_phase, _set_scan_phase)
+
+    def set_active(self, active: bool) -> None:
+        self._active = bool(active)
+        if self._active:
+            if self._scan_animation.state() != QAbstractAnimation.State.Running:
+                self._scan_animation.start()
+        else:
+            self._scan_animation.stop()
+            self._scan_phase = 0.0
+            self.update()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setClipRect(self.rect().adjusted(2, 2, -2, -2))
+        painter.setPen(QPen(QColor(101, 155, 196, 24), 1))
+        for x in range(24, self.width(), 48):
+            painter.drawLine(x, 2, x, 6)
+            painter.drawLine(x, self.height() - 7, x, self.height() - 3)
+        if not self._active:
+            return
+        scan_x = self.width() * self._scan_phase
+        scan = QLinearGradient(scan_x - 64.0, 0, scan_x + 64.0, 0)
+        scan.setColorAt(0.0, QColor(68, 171, 235, 0))
+        scan.setColorAt(0.5, QColor(68, 171, 235, 22))
+        scan.setColorAt(1.0, QColor(68, 171, 235, 0))
+        painter.fillRect(self.rect().adjusted(2, 2, -2, -2), scan)
+
+class InstrumentFrame(QFrame):
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor(91, 180, 221, 72), 1))
+        margin = 8
+        arm = 11
+        right = self.width() - margin - 1
+        bottom = self.height() - margin - 1
+        for x, x_direction in ((margin, 1), (right, -1)):
+            painter.drawLine(x, margin, x + arm * x_direction, margin)
+            painter.drawLine(x, bottom, x + arm * x_direction, bottom)
+        painter.drawLine(margin, margin, margin, margin + arm)
+        painter.drawLine(right, margin, right, margin + arm)
+        painter.drawLine(margin, bottom, margin, bottom - arm)
+        painter.drawLine(right, bottom, right, bottom - arm)
 
 class FloatingScrollBar(QScrollBar):
 
@@ -889,7 +1187,14 @@ class ReplayLibraryCard(QWidget):
 
     def __init__(self, path: Path) -> None:
         super().__init__()
+        self.setObjectName('replayLibraryCard')
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._highlight_progress = 0.0
+        self._hovered = False
+        self._selected = False
+        self._highlight_animation = QPropertyAnimation(self, b'highlightProgress', self)
+        self._highlight_animation.setDuration(175)
+        self._highlight_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(4)
@@ -901,6 +1206,53 @@ class ReplayLibraryCard(QWidget):
         meta.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(title)
         layout.addWidget(meta)
+
+    def _get_highlight_progress(self) -> float:
+        return self._highlight_progress
+
+    def _set_highlight_progress(self, value: float) -> None:
+        self._highlight_progress = float(value)
+        self.update()
+    highlightProgress = Property(float, _get_highlight_progress, _set_highlight_progress)
+
+    def set_hovered(self, hovered: bool) -> None:
+        self._hovered = bool(hovered)
+        self._animate_highlight()
+
+    def set_selected(self, selected: bool) -> None:
+        self._selected = bool(selected)
+        self._animate_highlight()
+
+    def _animate_highlight(self) -> None:
+        target = 1.0 if self._hovered or self._selected else 0.0
+        self._highlight_animation.stop()
+        self._highlight_animation.setStartValue(self._highlight_progress)
+        self._highlight_animation.setEndValue(target)
+        self._highlight_animation.start()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        progress = self._highlight_progress
+        if progress <= 0.001:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        frame = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        wash = QLinearGradient(0, 0, self.width(), 0)
+        wash.setColorAt(0.0, QColor(37, 126, 170, round(34 * progress)))
+        wash.setColorAt(0.52, QColor(37, 126, 170, round(9 * progress)))
+        wash.setColorAt(1.0, QColor(37, 126, 170, 0))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(wash)
+        painter.drawRoundedRect(frame, 10, 10)
+        border = QColor(80, 173, 218, round(112 * progress))
+        painter.setPen(QPen(border, 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(frame, 10, 10)
+        sensor = QColor(91, 203, 235, round((210 if self._selected else 150) * progress))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(sensor)
+        painter.drawEllipse(QRectF(self.width() - 17, 12, 3.5, 3.5))
 
     @staticmethod
     def _metadata(path: Path) -> str:
@@ -916,6 +1268,7 @@ class ReplayLibraryList(QListWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName('replayLibrary')
+        self.setMouseTracking(True)
         self.setSpacing(7)
         self.setUniformItemSizes(True)
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
@@ -927,6 +1280,41 @@ class ReplayLibraryList(QListWidget):
         self._scroll_animation.setDuration(165)
         self._scroll_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._scroll_target = 0
+        self._hovered_item: QListWidgetItem | None = None
+        self.currentItemChanged.connect(self._selection_changed)
+
+    def _card_for_item(self, item: QListWidgetItem | None) -> ReplayLibraryCard | None:
+        if item is None:
+            return None
+        widget = self.itemWidget(item)
+        return widget if isinstance(widget, ReplayLibraryCard) else None
+
+    def _set_hovered_item(self, item: QListWidgetItem | None) -> None:
+        if item is self._hovered_item:
+            return
+        previous = self._card_for_item(self._hovered_item)
+        if previous is not None:
+            previous.set_hovered(False)
+        self._hovered_item = item
+        current = self._card_for_item(item)
+        if current is not None:
+            current.set_hovered(True)
+
+    def _selection_changed(self, current: QListWidgetItem | None, previous: QListWidgetItem | None) -> None:
+        previous_card = self._card_for_item(previous)
+        if previous_card is not None:
+            previous_card.set_selected(False)
+        current_card = self._card_for_item(current)
+        if current_card is not None:
+            current_card.set_selected(True)
+
+    def mouseMoveEvent(self, event) -> None:
+        self._set_hovered_item(self.itemAt(event.position().toPoint()))
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._set_hovered_item(None)
+        super().leaveEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         pixel_delta = event.pixelDelta().y()
@@ -965,12 +1353,25 @@ class StatCard(QFrame):
     def set_value(self, value: str) -> None:
         self.value_label.setText(value)
 
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        accent = QLinearGradient(14, 0, 70, 0)
+        accent.setColorAt(0.0, QColor(77, 176, 218, 118))
+        accent.setColorAt(1.0, QColor(77, 176, 218, 0))
+        painter.setPen(QPen(accent, 1))
+        painter.drawLine(14, 1, 70, 1)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(103, 204, 230, 105))
+        painter.drawEllipse(QRectF(self.width() - 18, 12, 3, 3))
+
 class ReplayLabWindow(QMainWindow):
 
     def __init__(self, settings: QSettings | None=None) -> None:
         super().__init__()
-        build_id = release_build_id()
-        self.setWindowTitle(f'{APP_NAME} · {build_id}' if build_id else APP_NAME)
+        build_id = compact_build_id(release_build_id())
+        self.setWindowTitle(f'{APP_NAME} · {build_id}')
         icon_path = app_icon_path()
         if icon_path is not None:
             self.setWindowIcon(QIcon(str(icon_path)))
@@ -990,6 +1391,9 @@ class ReplayLabWindow(QMainWindow):
         self.current_path: Path | None = None
         self._replay_moments: list[ReplayMoment] = []
         self._report_cache: dict[Path, ReplayReport] = {}
+        self._table_focus_mode = False
+        self._table_focus_splitter_sizes: list[int] = []
+        self._table_focus_animation: QPropertyAnimation | None = None
         self._parse_task: ParseTask | None = None
         self._launch_task: LaunchTask | None = None
         self._last_requested_replay_time: int | None = None
@@ -1017,6 +1421,7 @@ class ReplayLabWindow(QMainWindow):
         self._wire_camera()
         self._wire_ability_hud()
         self._apply_style()
+        QTimer.singleShot(0, self._apply_native_window_frame)
         self.camera_macro_signals.triggered.connect(self._camera_macro_triggered)
         self.camera_macro_signals.selection_intent.connect(self._ability_hud_pointer_selection)
         self._camera_input_poll = QTimer(self)
@@ -1054,6 +1459,9 @@ class ReplayLabWindow(QMainWindow):
         elif self.settings_recovery.repaired:
             self.status_label.setText('ReplayLab очистил незавершённое состояние прошлого сеанса.')
 
+    def _apply_native_window_frame(self) -> None:
+        self._native_title_bar_dark = apply_dark_windows_title_bar(self)
+
     def _build_ui(self) -> None:
         central = ObsidianSurface()
         central.setObjectName('obsidianSurface')
@@ -1065,24 +1473,35 @@ class ReplayLabWindow(QMainWindow):
         toolbar = QHBoxLayout(top_bar)
         toolbar.setContentsMargins(14, 9, 12, 9)
         toolbar.setSpacing(10)
-        mark = QLabel('R')
-        mark.setObjectName('labMark')
-        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mark.setFixedSize(38, 38)
-        toolbar.addWidget(mark)
+        self.brand_mark = QLabel()
+        self.brand_mark.setObjectName('labMark')
+        self.brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.brand_mark.setFixedSize(42, 42)
+        brand_icon = scaled_pixmap(app_icon_path(), 38)
+        if brand_icon is not None:
+            self.brand_mark.setPixmap(brand_icon)
+        toolbar.addWidget(self.brand_mark)
         brand = QVBoxLayout()
         brand.setSpacing(0)
         title = QLabel('ReplayLab')
         title.setObjectName('appTitle')
-        subtitle = QLabel('WARCRAFT III REPLAY RESEARCH SYSTEM')
+        subtitle = QLabel('TEMPORAL REPLAY OBSERVATORY')
         subtitle.setObjectName('appSubtitle')
         brand.addWidget(title)
         brand.addWidget(subtitle)
         toolbar.addLayout(brand)
-        build_id = release_build_id() or 'DEVELOPMENT'
-        lab_chip = QLabel(f'OBSIDIAN FORGE  ·  {build_id}')
-        lab_chip.setObjectName('labChip')
-        toolbar.addWidget(lab_chip)
+        build_id = compact_build_id(release_build_id())
+        self.lab_chip = QLabel(f'TEMPORAL OBSERVATORY  ·  {build_id}')
+        self.lab_chip.setObjectName('labChip')
+        toolbar.addWidget(self.lab_chip)
+        system_state = QHBoxLayout()
+        system_state.setSpacing(3)
+        self.system_pulse = SignalPulse()
+        self.system_state_label = QLabel('SYSTEM STANDBY')
+        self.system_state_label.setObjectName('systemState')
+        system_state.addWidget(self.system_pulse)
+        system_state.addWidget(self.system_state_label)
+        toolbar.addLayout(system_state)
         toolbar.addStretch()
         self.open_file_button = QPushButton('Добавить реплеи')
         self.open_file_button.setProperty('role', 'primary')
@@ -1097,9 +1516,11 @@ class ReplayLabWindow(QMainWindow):
             toolbar.addWidget(self.export_button)
         root.addWidget(top_bar)
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter = splitter
         splitter.setChildrenCollapsible(False)
         root.addWidget(splitter, 1)
         sidebar = QFrame()
+        self.sidebar = sidebar
         sidebar.setObjectName('sidebar')
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(12, 14, 12, 12)
@@ -1134,6 +1555,7 @@ class ReplayLabWindow(QMainWindow):
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(10)
+        content_layout.addWidget(self._build_temporal_context_bar())
         self.camera_macro_combos: dict[str, QComboBox] = {}
         self._camera_binding_values: dict[str, int] = {}
         self.tabs = QTabWidget()
@@ -1145,15 +1567,28 @@ class ReplayLabWindow(QMainWindow):
         self.tabs.addTab(self.stats_tab, 'Статистика')
         self.tabs.addTab(self.moments_tab, 'Просмотр')
         self.tabs.addTab(self.camera_tab, 'Съёмка')
+        self.tabs.currentChanged.connect(self._product_direction_changed)
         content_layout.addWidget(self.tabs, 1)
         content_layout.addWidget(self._build_transport_bar())
         splitter.addWidget(content)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([270, 1100])
+        diagnostic_rail = QFrame()
+        diagnostic_rail.setObjectName('diagnosticRail')
+        diagnostic_layout = QHBoxLayout(diagnostic_rail)
+        diagnostic_layout.setContentsMargins(10, 5, 10, 5)
+        diagnostic_layout.setSpacing(9)
+        diagnostic_title = QLabel('SESSION LOG')
+        diagnostic_title.setObjectName('diagnosticTitle')
+        diagnostic_layout.addWidget(diagnostic_title)
         self.status_label = QLabel('Выбери .w3g — отчёт появится здесь.')
         self.status_label.setObjectName('statusLabel')
-        root.addWidget(self.status_label)
+        diagnostic_layout.addWidget(self.status_label, 1)
+        diagnostic_mode = QLabel('LOCAL  /  FAIL-CLOSED')
+        diagnostic_mode.setObjectName('diagnosticMode')
+        diagnostic_layout.addWidget(diagnostic_mode)
+        root.addWidget(diagnostic_rail)
         self.setCentralWidget(central)
         self.open_file_button.clicked.connect(self.open_file)
         self.open_folder_button.clicked.connect(self.open_folder)
@@ -1162,6 +1597,68 @@ class ReplayLabWindow(QMainWindow):
         self.launch_replay_button.clicked.connect(self._launch_current_replay)
         self.launch_paths_button.clicked.connect(self._configure_launch_paths)
         self.auto_launch_checkbox.toggled.connect(lambda checked: self.settings.setValue('auto_launch_replay', checked))
+
+    def _build_temporal_context_bar(self) -> QWidget:
+        self.temporal_context = TemporalContextBar()
+        layout = QHBoxLayout(self.temporal_context)
+        layout.setContentsMargins(14, 8, 12, 8)
+        layout.setSpacing(9)
+        specimen = QVBoxLayout()
+        specimen.setSpacing(1)
+        specimen_title = QLabel('ACTIVE REPLAY')
+        specimen_title.setObjectName('specimenEyebrow')
+        self.specimen_name_label = QLabel('NO REPLAY SELECTED')
+        self.specimen_name_label.setObjectName('specimenName')
+        self.specimen_meta_label = QLabel('ADD A .W3G RECORD TO BEGIN TEMPORAL RECONSTRUCTION')
+        self.specimen_meta_label.setObjectName('specimenMeta')
+        specimen.addWidget(specimen_title)
+        specimen.addWidget(self.specimen_name_label)
+        specimen.addWidget(self.specimen_meta_label)
+        layout.addLayout(specimen, 1)
+        self.fingerprint_panel = QWidget()
+        self.fingerprint_panel.setObjectName('fingerprintPanel')
+        fingerprint_layout = QVBoxLayout(self.fingerprint_panel)
+        fingerprint_layout.setContentsMargins(0, 0, 0, 0)
+        fingerprint_layout.setSpacing(2)
+        fingerprint_title = QLabel('TEMPORAL SIGNATURE')
+        fingerprint_title.setObjectName('fingerprintTitle')
+        self.temporal_fingerprint = TemporalFingerprint()
+        fingerprint_layout.addWidget(fingerprint_title)
+        fingerprint_layout.addWidget(self.temporal_fingerprint)
+        layout.addWidget(self.fingerprint_panel)
+        self.temporal_source_node = TemporalStatusNode('SOURCE', 'NO SIGNAL')
+        self.temporal_model_node = TemporalStatusNode('MODEL', 'STANDBY')
+        self.temporal_runtime_node = TemporalStatusNode('WARCRAFT LINK', 'OFFLINE')
+        self.temporal_runtime_node.set_value('OFFLINE', 'idle')
+        layout.addWidget(self.temporal_source_node)
+        layout.addWidget(self.temporal_model_node)
+        layout.addWidget(self.temporal_runtime_node)
+        return self.temporal_context
+
+    def _set_system_state(self, text: str, state: str='idle') -> None:
+        self.system_state_label.setText(text)
+        self.system_state_label.setProperty('signal', state)
+        self.system_pulse.set_state(state)
+        self.system_state_label.style().unpolish(self.system_state_label)
+        self.system_state_label.style().polish(self.system_state_label)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, 'fingerprint_panel'):
+            self.fingerprint_panel.setVisible(self.width() >= 1280)
+        if hasattr(self, 'lab_chip'):
+            self.lab_chip.setVisible(self.width() >= 1180)
+        compact_height = self.height() < 720
+        if hasattr(self, 'player_detail'):
+            self.player_detail.setVisible(not compact_height and (not self._table_focus_mode))
+        if hasattr(self, 'seek_metrics_label'):
+            self.seek_metrics_label.setVisible(not compact_height)
+        if hasattr(self, 'seek_status'):
+            self.seek_status.setVisible(not compact_height)
+        if hasattr(self, 'timeline'):
+            self.timeline.setMinimumHeight(44 if compact_height else 54)
+        if hasattr(self, 'temporal_transport'):
+            self.temporal_transport.setMaximumHeight(135 if compact_height else 16777215)
 
     def _install_floating_scrollbars(self) -> None:
         for area in self.findChildren(QAbstractScrollArea):
@@ -1182,39 +1679,80 @@ class ReplayLabWindow(QMainWindow):
         tab = QWidget()
         outer_layout = QVBoxLayout(tab)
         outer_layout.setContentsMargins(0, 10, 0, 0)
-        cards = QHBoxLayout()
+        self.stats_cards = QWidget()
+        self.stats_cards.setObjectName('statsCards')
+        cards = QHBoxLayout(self.stats_cards)
+        cards.setContentsMargins(0, 0, 0, 0)
         self.map_card = StatCard('КАРТА')
         self.duration_card = StatCard('ИГРОВОЕ ВРЕМЯ')
         self.kills_card = StatCard('УБИЙСТВА')
         self.moments_card = StatCard('СЕРИИ')
         for card in (self.map_card, self.duration_card, self.kills_card, self.moments_card):
             cards.addWidget(card, 1)
-        outer_layout.addLayout(cards)
+        outer_layout.addWidget(self.stats_cards)
         self.stats_sections = QTabWidget()
         self.stats_sections.setObjectName('sectionTabs')
         self.stats_sections.tabBar().setObjectName('sectionTabBar')
         players_page = QWidget()
         layout = QVBoxLayout(players_page)
         layout.setContentsMargins(0, 8, 0, 0)
+        self.table_focus_rail = QFrame()
+        self.table_focus_rail.setObjectName('tableFocusRail')
+        focus_layout = QHBoxLayout(self.table_focus_rail)
+        focus_layout.setContentsMargins(15, 10, 12, 10)
+        focus_layout.setSpacing(10)
+        focus_identity = QVBoxLayout()
+        focus_identity.setSpacing(1)
+        focus_eyebrow = QLabel('PLAYER MATRIX  /  FULL VIEW')
+        focus_eyebrow.setObjectName('focusEyebrow')
+        self.table_focus_name = QLabel('NO REPLAY SELECTED')
+        self.table_focus_name.setObjectName('focusTitle')
+        focus_identity.addWidget(focus_eyebrow)
+        focus_identity.addWidget(self.table_focus_name)
+        focus_layout.addLayout(focus_identity)
+        focus_layout.addStretch()
+        self.table_focus_meta = QLabel('00 PLAYERS  ·  17 COLUMNS')
+        self.table_focus_meta.setObjectName('focusMeta')
+        focus_layout.addWidget(self.table_focus_meta)
+        self.table_focus_exit_button = QPushButton('Вернуться к обзору')
+        self.table_focus_exit_button.setProperty('role', 'primary')
+        self.table_focus_exit_button.setProperty('density', 'compact')
+        focus_layout.addWidget(self.table_focus_exit_button)
+        self.table_focus_rail.setVisible(False)
+        layout.addWidget(self.table_focus_rail)
         detail = QFrame()
+        self.player_detail = detail
         detail.setObjectName('playerDetail')
         detail_layout = QHBoxLayout(detail)
-        detail_layout.setContentsMargins(14, 12, 14, 12)
-        detail_layout.setSpacing(14)
+        detail_layout.setContentsMargins(12, 9, 12, 9)
+        detail_layout.setSpacing(10)
+        self.player_side_signal = QFrame()
+        self.player_side_signal.setObjectName('sideSignal')
+        self.player_side_signal.setProperty('side', 'unknown')
+        self.player_side_signal.setFixedWidth(3)
+        self.player_side_signal.setMinimumHeight(60)
+        detail_layout.addWidget(self.player_side_signal)
         self.hero_portrait = QLabel('?')
         self.hero_portrait.setObjectName('heroPortrait')
         self.hero_portrait.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.hero_portrait.setFixedSize(76, 76)
+        self.hero_portrait.setFixedSize(66, 66)
         detail_layout.addWidget(self.hero_portrait)
         identity_layout = QVBoxLayout()
-        identity_layout.setSpacing(3)
+        identity_layout.setSpacing(2)
+        identity_header = QHBoxLayout()
+        identity_header.setSpacing(8)
         self.detail_player_name = QLabel('Выбери игрока')
         self.detail_player_name.setObjectName('playerName')
+        self.player_identity_badge = QLabel('SLOT --  ·  NID --')
+        self.player_identity_badge.setObjectName('identityBadge')
+        identity_header.addWidget(self.detail_player_name)
+        identity_header.addWidget(self.player_identity_badge)
+        identity_header.addStretch()
         self.detail_hero_name = QLabel('Портрет и финальная сборка')
         self.detail_hero_name.setObjectName('playerHero')
         self.detail_summary = QLabel('—')
         self.detail_summary.setObjectName('playerMeta')
-        identity_layout.addWidget(self.detail_player_name)
+        identity_layout.addLayout(identity_header)
         identity_layout.addWidget(self.detail_hero_name)
         identity_layout.addWidget(self.detail_summary)
         detail_layout.addLayout(identity_layout)
@@ -1222,7 +1760,15 @@ class ReplayLabWindow(QMainWindow):
         inventory_layout = QVBoxLayout()
         self.inventory_title = QLabel('ФИНАЛЬНЫЙ ИНВЕНТАРЬ')
         self.inventory_title.setObjectName('cardTitle')
-        inventory_layout.addWidget(self.inventory_title)
+        inventory_header = QHBoxLayout()
+        inventory_header.setSpacing(8)
+        inventory_header.addWidget(self.inventory_title)
+        inventory_header.addStretch()
+        self.inventory_evidence = QLabel('NO SIGNAL')
+        self.inventory_evidence.setObjectName('evidenceBadge')
+        self.inventory_evidence.setProperty('evidence', 'none')
+        inventory_header.addWidget(self.inventory_evidence)
+        inventory_layout.addLayout(inventory_header)
         slots_layout = QHBoxLayout()
         slots_layout.setSpacing(7)
         self.inventory_slots: list[QLabel] = []
@@ -1230,7 +1776,7 @@ class ReplayLabWindow(QMainWindow):
             slot = QLabel('—')
             slot.setObjectName('itemSlot')
             slot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            slot.setFixedSize(54, 54)
+            slot.setFixedSize(48, 48)
             self.inventory_slots.append(slot)
             slots_layout.addWidget(slot)
         inventory_layout.addLayout(slots_layout)
@@ -1239,16 +1785,88 @@ class ReplayLabWindow(QMainWindow):
         self.stats_table = QTableWidget(0, 17)
         self.stats_table.setHorizontalHeaderLabels(['Игрок', 'Герой', 'Сторона', 'Итог', 'K', 'D', 'A', 'Крипы', 'Денаи', 'Нейтралы', 'Золото', 'Инвентарь', 'Net worth', 'APM сред.', 'APM пик', 'Пик на', 'Башни / Rax'])
         self._configure_table(self.stats_table)
-        self.stats_table.setIconSize(QSize(36, 36))
-        self.stats_table.verticalHeader().setDefaultSectionSize(46)
+        self.stats_table.setIconSize(QSize(32, 32))
+        self.stats_table.verticalHeader().setDefaultSectionSize(40)
         self.stats_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.stats_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.stats_table)
         self.stats_table.itemSelectionChanged.connect(self._stats_selection_changed)
         self.stats_sections.addTab(players_page, 'Игроки')
         self.stats_sections.addTab(self._build_chat_page(), 'Чат')
+        self.full_table_button = QPushButton('Развернуть таблицу')
+        self.full_table_button.setProperty('role', 'ghost')
+        self.full_table_button.setProperty('density', 'compact')
+        self.full_table_button.setToolTip('Открыть встроенный Focus View со всеми игроками матча.')
+        self.full_table_button.setEnabled(False)
+        self.stats_sections.setCornerWidget(self.full_table_button, Qt.Corner.TopRightCorner)
+        self.full_table_button.clicked.connect(self._toggle_table_focus)
+        self.table_focus_exit_button.clicked.connect(lambda: self._set_table_focus_mode(False))
+        self.stats_sections.currentChanged.connect(self._statistics_section_changed)
         outer_layout.addWidget(self.stats_sections, 1)
         return tab
+
+    def _product_direction_changed(self, index: int) -> None:
+        if self._table_focus_mode and self.tabs.widget(index) is not self.stats_tab:
+            self._set_table_focus_mode(False)
+
+    def _statistics_section_changed(self, index: int) -> None:
+        if self._table_focus_mode and index != 0:
+            self._set_table_focus_mode(False)
+        self.full_table_button.setVisible(index == 0)
+
+    def _toggle_table_focus(self) -> None:
+        self._set_table_focus_mode(not self._table_focus_mode)
+
+    def _set_table_focus_mode(self, active: bool) -> None:
+        active = bool(active and self.report is not None)
+        if active == self._table_focus_mode:
+            return
+        self._table_focus_mode = active
+        if active:
+            self._table_focus_splitter_sizes = self.main_splitter.sizes()
+            self.full_table_button.setVisible(False)
+            self.sidebar.setVisible(False)
+            self.temporal_context.setVisible(False)
+            self.stats_cards.setVisible(False)
+            self.player_detail.setVisible(False)
+            self.temporal_transport.setVisible(False)
+            self.tabs.tabBar().setVisible(False)
+            self.stats_sections.tabBar().setVisible(False)
+            self.table_focus_rail.setVisible(True)
+            self.stats_table.setFocus()
+        else:
+            self.sidebar.setVisible(True)
+            self.temporal_context.setVisible(True)
+            self.stats_cards.setVisible(True)
+            self.player_detail.setVisible(self.height() >= 720)
+            self.temporal_transport.setVisible(True)
+            self.tabs.tabBar().setVisible(True)
+            self.stats_sections.tabBar().setVisible(True)
+            self.table_focus_rail.setVisible(False)
+            self.full_table_button.setVisible(self.stats_sections.currentIndex() == 0)
+            if self._table_focus_splitter_sizes:
+                QTimer.singleShot(0, lambda sizes=list(self._table_focus_splitter_sizes): self.main_splitter.setSizes(sizes))
+        self._animate_table_focus_transition()
+
+    def _animate_table_focus_transition(self) -> None:
+        if self._table_focus_animation is not None:
+            self._table_focus_animation.stop()
+        self.stats_tab.setGraphicsEffect(None)
+        effect = QGraphicsOpacityEffect(self.stats_tab)
+        effect.setOpacity(0.72)
+        self.stats_tab.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b'opacity', self)
+        animation.setStartValue(0.72)
+        animation.setEndValue(1.0)
+        animation.setDuration(180)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        def clear_effect() -> None:
+            if self.stats_tab.graphicsEffect() is effect:
+                self.stats_tab.setGraphicsEffect(None)
+        animation.finished.connect(clear_effect)
+        self._table_focus_animation = animation
+        animation.start()
 
     def _build_chat_page(self) -> QWidget:
         page = QWidget()
@@ -1389,11 +2007,41 @@ class ReplayLabWindow(QMainWindow):
         return page
 
     def _build_transport_bar(self) -> QWidget:
-        transport = QFrame()
-        transport.setObjectName('playerDetail')
+        transport = InstrumentFrame()
+        self.temporal_transport = transport
+        transport.setObjectName('temporalTransport')
         layout = QVBoxLayout(transport)
-        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setContentsMargins(14, 9, 14, 9)
+        layout.setSpacing(5)
+        coordinate_header = QHBoxLayout()
+        coordinate_header.setSpacing(10)
+        coordinate_title = QLabel('TEMPORAL COORDINATE')
+        coordinate_title.setObjectName('coordinateTitle')
+        coordinate_header.addWidget(coordinate_title)
+        self.temporal_position_label = QLabel('T+00:00.000  /  000.0%')
+        self.temporal_position_label.setObjectName('coordinateValue')
+        coordinate_header.addWidget(self.temporal_position_label)
+        coordinate_header.addStretch()
+        self.connection_label = QLabel('WARCRAFT OFFLINE')
+        self.connection_label.setObjectName('connectionStandby')
+        coordinate_header.addWidget(self.connection_label)
+        layout.addLayout(coordinate_header)
+        time_bar = QHBoxLayout()
+        time_bar.setSpacing(8)
+        self.time_input = QLineEdit('00:00')
+        self.time_input.setPlaceholderText('34:18')
+        self.time_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_input.setFixedWidth(104)
+        self.time_input.setToolTip('Формат: 34:18 или 1:02:03')
+        self.timeline = TimelineSlider()
+        self.end_label = QLabel('00:00')
+        self.end_label.setObjectName('timeLabel')
+        time_bar.addWidget(self.time_input)
+        time_bar.addWidget(self.timeline, 1)
+        time_bar.addWidget(self.end_label)
+        layout.addLayout(time_bar)
         seeker_bar = QHBoxLayout()
+        seeker_bar.setSpacing(7)
         self.attach_button = QPushButton('Подключить Seeker')
         self.attach_button.setVisible(False)
         self.seek_button = QPushButton('Перейти к таймингу')
@@ -1410,28 +2058,12 @@ class ReplayLabWindow(QMainWindow):
         self.seek_profile.currentIndexChanged.connect(lambda: self.settings.setValue('seek_profile', self.seek_profile.currentData()))
         self.seek_button.setEnabled(False)
         self.cancel_button.setEnabled(False)
-        self.connection_label = QLabel('Warcraft не подключён')
-        self.connection_label.setObjectName('connectionOffline')
         seeker_bar.addWidget(self.attach_button)
         seeker_bar.addWidget(self.seek_button)
         seeker_bar.addWidget(self.cancel_button)
         seeker_bar.addWidget(self.seek_profile)
         seeker_bar.addStretch()
-        seeker_bar.addWidget(self.connection_label)
         layout.addLayout(seeker_bar)
-        time_bar = QHBoxLayout()
-        self.time_input = QLineEdit('00:00')
-        self.time_input.setPlaceholderText('34:18')
-        self.time_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.time_input.setFixedWidth(96)
-        self.time_input.setToolTip('Формат: 34:18 или 1:02:03')
-        self.timeline = TimelineSlider()
-        self.end_label = QLabel('00:00')
-        self.end_label.setObjectName('timeLabel')
-        time_bar.addWidget(self.time_input)
-        time_bar.addWidget(self.timeline, 1)
-        time_bar.addWidget(self.end_label)
-        layout.addLayout(time_bar)
         self.seek_status = QLabel('Выбери событие или введи точный тайминг.')
         self.seek_status.setObjectName('hint')
         layout.addWidget(self.seek_status)
@@ -1441,9 +2073,15 @@ class ReplayLabWindow(QMainWindow):
         self.attach_button.clicked.connect(lambda: self.seeker.attach_to_warcraft())
         self.seek_button.clicked.connect(self.seek_to_target)
         self.cancel_button.clicked.connect(self.seeker.cancel)
-        self.timeline.valueChanged.connect(lambda value: self.time_input.setText(format_time(value)))
+        self.timeline.valueChanged.connect(self._temporal_position_changed)
         self.time_input.returnPressed.connect(self._time_input_submitted)
         return transport
+
+    def _temporal_position_changed(self, value: int) -> None:
+        self.time_input.setText(format_time(value))
+        duration = max(self.timeline.maximum(), 1)
+        progress = min(max(value / duration * 100.0, 0.0), 100.0)
+        self.temporal_position_label.setText(f'T+{format_time(value, millis=True)}  /  {progress:05.1f}%')
 
     def _setup_camera_macro_combo(self, combo: QComboBox, action: str, default_key: int) -> None:
         for label, virtual_key in KEY_CHOICES:
@@ -2076,8 +2714,13 @@ class ReplayLabWindow(QMainWindow):
         self.camera_status = QLabel('Открой реплей в Warcraft и включи независимый Camera Engine.')
         self.camera_status.setObjectName('connectionOffline')
         panel_layout.addWidget(self.camera_status)
-        layout.addWidget(panel)
-        layout.addStretch()
+        self.camera_scroll = QScrollArea()
+        self.camera_scroll.setObjectName('cameraWorkspaceScroll')
+        self.camera_scroll.setWidgetResizable(True)
+        self.camera_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.camera_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.camera_scroll.setWidget(panel)
+        layout.addWidget(self.camera_scroll, 1)
         self.camera_start_button.clicked.connect(self._start_camera)
         self.camera_stop_button.clicked.connect(self.camera_service.stop)
         self.camera_defaults_button.clicked.connect(self._restore_camera_preferences)
@@ -2467,6 +3110,20 @@ class ReplayLabWindow(QMainWindow):
     def load_replay(self, path: Path) -> None:
         self.current_path = path.resolve()
         self.report = None
+        self._set_table_focus_mode(False)
+        self.full_table_button.setEnabled(False)
+        try:
+            size_mib = path.stat().st_size / (1024.0 * 1024.0)
+            source_size = f'{size_mib:.1f} MB'
+        except OSError:
+            source_size = 'SIZE UNKNOWN'
+        self.specimen_name_label.setText(path.stem.upper())
+        self.specimen_meta_label.setText(f'W3G  ·  {source_size}  ·  INDEXING TEMPORAL SOURCE')
+        self.temporal_context.set_active(False)
+        self.temporal_fingerprint.clear()
+        self.temporal_source_node.set_value('W3G / INDEXING', 'busy')
+        self.temporal_model_node.set_value('BUILDING MODEL', 'busy')
+        self._set_system_state('INDEXING W3G', 'busy')
         self.export_button.setEnabled(False)
         self.open_file_button.setEnabled(False)
         self.open_folder_button.setEnabled(False)
@@ -2488,6 +3145,12 @@ class ReplayLabWindow(QMainWindow):
     def _parse_error(self, message: str) -> None:
         LOGGER.error('Replay parsing failed: %s', message)
         forget_failed_replay(self.settings, self.current_path)
+        self.temporal_context.set_active(False)
+        self.temporal_fingerprint.clear()
+        self.full_table_button.setEnabled(False)
+        self.temporal_source_node.set_value('SOURCE FAULT', 'error')
+        self.temporal_model_node.set_value('NO MODEL', 'error')
+        self._set_system_state('PARSER FAULT', 'error')
         self.status_label.setText('Не удалось разобрать реплей.')
         QMessageBox.critical(self, 'Ошибка парсера', message)
 
@@ -2504,9 +3167,25 @@ class ReplayLabWindow(QMainWindow):
         self.kills_card.set_value(str(len(report.kills)))
         triples = sum((event.count >= 3 for event in report.multi_kills))
         self.moments_card.set_value(f'{len(report.multi_kills)} / {triples} крупных')
+        self.specimen_name_label.setText(report_path.stem.upper())
+        self.specimen_meta_label.setText(f"W3G  ·  {Path(report.map_path).name or 'UNKNOWN MAP'}  ·  {format_time(game_duration)} RECONSTRUCTED SPAN")
+        self.temporal_source_node.set_value('W3G / PARSED', 'online')
+        self.temporal_model_node.set_value(f'{len(report.dota_players):02d} IDENTITIES', 'online')
+        self.table_focus_name.setText(report_path.stem.upper())
+        self.table_focus_meta.setText(f'{len(report.dota_players):02d} PLAYERS  ·  {self.stats_table.columnCount():02d} COLUMNS')
+        self.full_table_button.setEnabled(True)
+        if not self.seeker.attached:
+            self.temporal_runtime_node.set_value('OFFLINE', 'idle')
+            self.connection_label.setText('WARCRAFT OFFLINE')
+            self.connection_label.setObjectName('connectionStandby')
+            self.connection_label.style().unpolish(self.connection_label)
+            self.connection_label.style().polish(self.connection_label)
+        self.temporal_context.set_active(True)
+        self._set_system_state('REPLAY READY', 'online')
         self._fill_stats(report)
         self._fill_camera_players(report)
         self._fill_moments(report, game_duration)
+        self.temporal_fingerprint.set_events(self._replay_moments, game_duration)
         self._refresh_chat()
         self.seek_button.setEnabled(self.seeker.attached)
         self.status_label.setText(f'{Path(report.source_file).name} · {len(report.dota_players)} игроков · {len(report.kills)} убийств')
@@ -2614,8 +3293,15 @@ class ReplayLabWindow(QMainWindow):
             self.ability_hud_start_button.setEnabled(bool(heroes))
         self.camera_follow_button.setEnabled(self.camera_service.running and bool(heroes))
 
+    def _set_inventory_evidence(self, label: str, evidence: str, tooltip: str) -> None:
+        self.inventory_evidence.setText(label)
+        self.inventory_evidence.setProperty('evidence', evidence)
+        self.inventory_evidence.setToolTip(tooltip)
+        self.inventory_evidence.style().unpolish(self.inventory_evidence)
+        self.inventory_evidence.style().polish(self.inventory_evidence)
+
     def _show_player_detail(self, player: DotaPlayer) -> None:
-        portrait = scaled_pixmap(hero_icon_path(player.hero_name), 72)
+        portrait = scaled_pixmap(hero_icon_path(player.hero_name), 62)
         self.hero_portrait.clear()
         if portrait is not None:
             self.hero_portrait.setPixmap(portrait)
@@ -2623,23 +3309,35 @@ class ReplayLabWindow(QMainWindow):
             self.hero_portrait.setText('?')
         result = 'ПОБЕДА' if player.won is True else 'ПОРАЖЕНИЕ' if player.won is False else 'РЕЗУЛЬТАТ НЕИЗВЕСТЕН'
         self.detail_player_name.setText(player.name)
+        network_id = '--' if player.network_player_id is None else f'{player.network_player_id:02d}'
+        self.player_identity_badge.setText(f'SLOT {player.slot:02d}  ·  NID {network_id}')
+        side_key = (player.side or 'unknown').casefold()
+        if side_key not in {'sentinel', 'scourge'}:
+            side_key = 'unknown'
+        self.player_side_signal.setProperty('side', side_key)
+        self.player_side_signal.style().unpolish(self.player_side_signal)
+        self.player_side_signal.style().polish(self.player_side_signal)
         self.detail_hero_name.setText(f"{player.hero_name or player.hero_rawcode or 'Неизвестный герой'} · {player.side or '—'} · слот {player.slot} · {result}")
         average_apm = '—' if player.apm_average is None else f'{player.apm_average:.1f}'
         self.detail_summary.setText(f'K/D/A {number(player.kills)}/{number(player.deaths)}/{number(player.assists)}   ·   Net worth {number(player.net_worth)}   ·   APM {average_apm} / пик {number(player.apm_peak_60s)}')
         if player.inventory_source in {'game-stats-json', 'game-stats-partial-player'}:
             self.inventory_title.setText(f'ИНВЕНТАРЬ · СРЕЗ {format_time(player.inventory_game_time_ms)}')
+            self._set_inventory_evidence('EXACT · RECOVERED' if player.inventory_source == 'game-stats-partial-player' else 'EXACT · SNAPSHOT', 'exact', 'Точный записанный срез конкретного игрока.')
         elif player.inventory_source == 'final-table':
             self.inventory_title.setText('ФИНАЛЬНЫЙ ИНВЕНТАРЬ')
+            self._set_inventory_evidence('EXACT · FINAL', 'exact', 'Точная финальная таблица карты.')
         elif player.inventory_source == 'recorded-item-ledger':
             self.inventory_title.setText(f'СОСТАВ ИНВЕНТАРЯ · ≈ {format_time(player.inventory_game_time_ms)}')
+            self._set_inventory_evidence('RECONSTRUCTED', 'reconstructed', 'Состав восстановлен из записанного журнала предметов; порядок слотов неизвестен.')
         else:
             self.inventory_title.setText('ИНВЕНТАРЬ · ДАННЫХ НЕТ')
+            self._set_inventory_evidence('NO SIGNAL', 'none', 'Карта не оставила достаточного доказательства.')
         for index, slot_label in enumerate(self.inventory_slots):
             rawcode = player.final_item_rawcodes[index] if index < len(player.final_item_rawcodes) else None
             item_name = player.final_item_names[index] if index < len(player.final_item_names) else None
             cost = player.final_item_costs[index] if index < len(player.final_item_costs) else None
             slot_label.clear()
-            icon = scaled_pixmap(item_icon_path(item_name), 50)
+            icon = scaled_pixmap(item_icon_path(item_name), 44)
             if icon is not None:
                 slot_label.setPixmap(icon)
             elif rawcode:
@@ -3333,10 +4031,12 @@ class ReplayLabWindow(QMainWindow):
     def _seeker_attached(self, result: AttachResult) -> None:
         self._auto_attach_pid = None
         LOGGER.info('Navigation attached: pid=%s profile=%s match=%s attach_ms=%.1f validation_ms=%.1f scan=%s cache=%s', result.pid, result.build_profile, result.game_dll_match, result.attach_duration_ms, result.binary_validation_ms, result.replay_scan_strategy, result.validation_cache_hit)
-        self.connection_label.setText(f'Подключён · {format_time(result.replay_position_ms)}')
+        self.connection_label.setText(f'WARCRAFT LIVE · {format_time(result.replay_position_ms)}')
         self.connection_label.setObjectName('connectionOnline')
         self.connection_label.style().unpolish(self.connection_label)
         self.connection_label.style().polish(self.connection_label)
+        self.temporal_runtime_node.set_value(f'LIVE · {format_time(result.replay_position_ms)}', 'online')
+        self._set_system_state('WARCRAFT LINKED', 'online')
         self.attach_button.setVisible(False)
         self.seek_button.setEnabled(self.report is not None)
         self.seek_status.setText('Навигация по реплею готова')
@@ -3353,6 +4053,7 @@ class ReplayLabWindow(QMainWindow):
         game_start = self.report.game_start_ms if self.report else 0
         game_position = max(progress.current_replay_time_ms - (game_start or 0), 0)
         self.timeline.setValue(min(game_position, self.timeline.maximum()))
+        self.temporal_runtime_node.set_value(f'LIVE · {format_time(game_position)}', 'online')
         details = [f'Сейчас {format_time(game_position, millis=True)}']
         if progress.effective_speed > 0.01:
             details.append(f'{progress.effective_speed:.1f}x')
@@ -3387,6 +4088,12 @@ class ReplayLabWindow(QMainWindow):
         self.seek_status.setText(friendly)
         if not self.seeker.attached:
             self.attach_button.setVisible(False)
+            self.connection_label.setText('WARCRAFT OFFLINE')
+            self.connection_label.setObjectName('connectionOffline')
+            self.connection_label.style().unpolish(self.connection_label)
+            self.connection_label.style().polish(self.connection_label)
+            self.temporal_runtime_node.set_value('LINK FAULT', 'error')
+            self._set_system_state('REPLAY READY' if self.report is not None else 'SYSTEM STANDBY', 'online' if self.report is not None else 'idle')
         if is_critical_runtime_error(message):
             QMessageBox.critical(self, 'Навигация по реплею', 'Навигация не может продолжить работу. Подробности сохранены в диагностическом журнале.')
 
@@ -3425,7 +4132,7 @@ class ReplayLabWindow(QMainWindow):
         super().closeEvent(event)
 
     def _apply_style(self) -> None:
-        self.setStyleSheet('\n            QMainWindow, QDialog, QMessageBox { background: #080c12; }\n            QWidget {\n                color: #d8e2ed;\n                font-family: "Segoe UI Variable Text", "Segoe UI";\n                font-size: 10pt;\n            }\n            QWidget#obsidianSurface, QWidget#contentArea {\n                background: transparent;\n            }\n            QFrame#topBar {\n                background: rgba(11, 18, 27, 232);\n                border: 1px solid #1c2a38;\n                border-radius: 14px;\n            }\n            QLabel#labMark {\n                background: #102235;\n                border: 1px solid #31597d;\n                border-radius: 11px;\n                color: #8fc8ff;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 16pt;\n                font-weight: 700;\n            }\n            QLabel#appTitle {\n                color: #f4f8fc;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 16pt;\n                font-weight: 650;\n                letter-spacing: -0.4px;\n            }\n            QLabel#appSubtitle {\n                color: #60768b;\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 1.5px;\n            }\n            QLabel#labChip {\n                background: rgba(40, 83, 124, 72);\n                border: 1px solid #294662;\n                border-radius: 7px;\n                color: #88b8e4;\n                padding: 5px 9px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 600;\n            }\n            QLabel#sectionEyebrow, QLabel#cardTitle {\n                color: #6d8398;\n                font-size: 7.5pt;\n                font-weight: 700;\n                letter-spacing: 1.2px;\n            }\n            QLabel#sectionCount {\n                color: #52677b;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 600;\n            }\n            QLabel#sectionTitle {\n                color: #f1f6fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 17pt;\n                font-weight: 650;\n            }\n            QFrame#sidebar, QFrame#statCard, QFrame#playerDetail {\n                background: rgba(16, 24, 34, 238);\n                border: 1px solid #1d2c3a;\n                border-radius: 13px;\n            }\n            QFrame#sidebar {\n                background: rgba(12, 19, 28, 242);\n                border-color: #1a2937;\n            }\n            QFrame#statCard {\n                background: rgba(15, 24, 34, 232);\n                border-color: #203142;\n            }\n            QFrame#transitionCard {\n                background: rgba(14, 23, 33, 238);\n                border: 1px solid #223448;\n                border-radius: 11px;\n            }\n            QFrame#transitionCard QLabel {\n                background: transparent;\n                border: 0;\n            }\n            QLabel#cardValue {\n                color: #f1f6fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 13.5pt;\n                font-weight: 620;\n            }\n            QLabel#heroPortrait {\n                background: #080e14;\n                border: 1px solid #365774;\n                border-radius: 12px;\n                color: #60758a;\n                font-size: 22pt;\n                font-weight: 700;\n            }\n            QLabel#playerName {\n                color: #f4f7fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 15.5pt;\n                font-weight: 650;\n            }\n            QLabel#playerHero {\n                color: #6eb2ed;\n                font-size: 9.5pt;\n                font-weight: 600;\n            }\n            QLabel#playerMeta { color: #8799aa; }\n            QLabel#itemSlot {\n                background: #080e14;\n                border: 1px solid #2b4054;\n                border-radius: 9px;\n                color: #6f8295;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 8pt;\n                font-weight: 700;\n            }\n            QPushButton {\n                background: #152231;\n                border: 1px solid #27394a;\n                border-radius: 8px;\n                padding: 8px 13px;\n                color: #c9d6e2;\n                font-weight: 600;\n            }\n            QPushButton:hover {\n                background: #1b2c3d;\n                border-color: #3b536a;\n                color: #f1f6fb;\n            }\n            QPushButton:pressed {\n                background: #102033;\n                border-color: #4b8ecb;\n            }\n            QPushButton[role="primary"] {\n                background: #2469aa;\n                border-color: #327dbd;\n                color: #ffffff;\n            }\n            QPushButton[role="primary"]:hover {\n                background: #2c78bb;\n                border-color: #55a0df;\n            }\n            QPushButton[role="secondary"] { background: #162433; }\n            QPushButton[role="ghost"] {\n                background: transparent;\n                border-color: #243546;\n                color: #8da0b3;\n            }\n            QPushButton:disabled {\n                background: #121a24;\n                border-color: #1d2935;\n                color: #526170;\n            }\n            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {\n                background: #090f16;\n                border: 1px solid #2a3c4f;\n                border-radius: 8px;\n                color: #e6edf5;\n                padding: 7px 9px;\n                selection-background-color: #245b8c;\n            }\n            QLineEdit, QSpinBox, QDoubleSpinBox, QLabel#timeLabel {\n                font-family: "Cascadia Mono", "Consolas";\n                font-variant-numeric: tabular-nums;\n            }\n            QLineEdit:focus, QComboBox:focus,\n            QSpinBox:focus, QDoubleSpinBox:focus {\n                border-color: #4b94d3;\n            }\n            QComboBox::drop-down {\n                width: 24px;\n                border: 0;\n                background: transparent;\n            }\n            QComboBox QAbstractItemView {\n                background: #101923;\n                border: 1px solid #2b4156;\n                color: #dce6ef;\n                selection-background-color: #193c5d;\n                outline: 0;\n            }\n            QCheckBox { color: #a7b6c5; spacing: 8px; }\n            QCheckBox::indicator {\n                width: 15px;\n                height: 15px;\n                background: #090f16;\n                border: 1px solid #334a60;\n                border-radius: 4px;\n            }\n            QCheckBox::indicator:checked {\n                background: #327fc2;\n                border-color: #68ace4;\n            }\n            QListWidget, QTableWidget {\n                background: rgba(12, 19, 28, 244);\n                alternate-background-color: rgba(15, 24, 34, 244);\n                border: 1px solid #1d2c3a;\n                border-radius: 11px;\n                gridline-color: transparent;\n                selection-background-color: #173e63;\n                selection-color: #f6f9fc;\n                outline: 0;\n            }\n            QListWidget::item {\n                border-radius: 9px;\n            }\n            QListWidget#replayLibrary {\n                background: transparent;\n                border: 0;\n                padding: 2px 1px;\n                outline: 0;\n            }\n            QListWidget#replayLibrary::item {\n                background: rgba(15, 24, 34, 220);\n                border: 1px solid #1e2d3b;\n                border-radius: 11px;\n                color: transparent;\n            }\n            QListWidget#replayLibrary::item:hover {\n                background: rgba(22, 36, 49, 236);\n                border-color: #354c62;\n            }\n            QListWidget#replayLibrary::item:selected {\n                background: #142f49;\n                border: 1px solid #438bc7;\n            }\n            QLabel#replayCardTitle {\n                color: #dbe5ee;\n                font-size: 9.5pt;\n                font-weight: 620;\n            }\n            QLabel#replayCardMeta {\n                color: #60758a;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 600;\n            }\n            QHeaderView::section {\n                background: #121d28;\n                color: #73879a;\n                border: 0;\n                border-bottom: 1px solid #223241;\n                padding: 9px 8px;\n                font-size: 8pt;\n                font-weight: 700;\n            }\n            QTableCornerButton::section {\n                background: #121d28;\n                border: 0;\n                border-bottom: 1px solid #223241;\n            }\n            QTabWidget::pane {\n                border: 1px solid #1d2c3a;\n                border-radius: 11px;\n                background: rgba(10, 16, 24, 238);\n            }\n            QTabBar#productTabBar::tab {\n                background: transparent;\n                color: #72869a;\n                padding: 10px 17px;\n                margin-right: 5px;\n                border: 1px solid transparent;\n                border-radius: 9px;\n                font-weight: 620;\n            }\n            QTabBar#productTabBar::tab:hover {\n                background: #111d28;\n                color: #a9bac9;\n            }\n            QTabBar#productTabBar::tab:selected {\n                background: #162636;\n                border-color: #2a4258;\n                color: #f0f6fb;\n            }\n            QTabBar#sectionTabBar::tab {\n                background: transparent;\n                color: #718599;\n                padding: 9px 14px;\n                border: 0;\n                border-bottom: 2px solid transparent;\n                font-size: 9pt;\n                font-weight: 600;\n            }\n            QTabBar#sectionTabBar::tab:hover { color: #b4c3d0; }\n            QTabBar#sectionTabBar::tab:selected {\n                color: #dceaf5;\n                border-bottom-color: #4a95d3;\n            }\n            QLabel#hint { color: #74889c; }\n            QLabel#statusLabel {\n                color: #64798d;\n                border-top: 1px solid rgba(52, 76, 98, 110);\n                padding-top: 8px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7.5pt;\n            }\n            QLabel#timeLabel {\n                color: #eaf2f8;\n                font-weight: 650;\n            }\n            QLabel#connectionOffline { color: #df786a; }\n            QLabel#connectionOnline { color: #66d49b; }\n            QSlider::groove:horizontal {\n                height: 4px;\n                background: #263747;\n                border-radius: 2px;\n            }\n            QSlider::sub-page:horizontal {\n                background: #4b95d2;\n                border-radius: 2px;\n            }\n            QSlider::handle:horizontal {\n                background: #e9f3fb;\n                border: 3px solid #3d86c4;\n                width: 12px;\n                margin: -6px 0;\n                border-radius: 9px;\n            }\n            QSplitter::handle { background: transparent; width: 10px; }\n            QScrollBar#floatingScrollBar:vertical {\n                background: transparent;\n                border: 0;\n                width: 10px;\n                margin: 0;\n            }\n            QScrollBar#floatingScrollBar:horizontal {\n                background: transparent;\n                border: 0;\n                height: 10px;\n                margin: 0;\n            }\n            QScrollBar#floatingScrollBar::handle:vertical {\n                background: transparent;\n                min-height: 34px;\n            }\n            QScrollBar#floatingScrollBar::handle:horizontal {\n                background: transparent;\n                min-width: 34px;\n            }\n            QScrollBar#floatingScrollBar::add-line,\n            QScrollBar#floatingScrollBar::sub-line {\n                width: 0;\n                height: 0;\n                background: transparent;\n                border: 0;\n            }\n            QScrollBar#floatingScrollBar::add-page,\n            QScrollBar#floatingScrollBar::sub-page {\n                background: transparent;\n                border: 0;\n            }\n            QAbstractScrollArea::corner {\n                background: transparent;\n                border: 0;\n            }\n            QToolTip {\n                background: #111b25;\n                color: #dbe5ee;\n                border: 1px solid #31475b;\n                padding: 6px;\n            }\n            ')
+        self.setStyleSheet('\n            QMainWindow, QDialog, QMessageBox { background: #080c12; }\n            QWidget {\n                color: #d8e2ed;\n                font-family: "Segoe UI Variable Text", "Segoe UI";\n                font-size: 10pt;\n            }\n            QWidget#obsidianSurface, QWidget#contentArea {\n                background: transparent;\n            }\n            QFrame#topBar {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 rgba(7, 18, 28, 244),\n                    stop: 0.38 rgba(9, 29, 43, 244),\n                    stop: 1 rgba(7, 15, 23, 244)\n                );\n                border: 1px solid #24465a;\n                border-radius: 14px;\n            }\n            QLabel#labMark {\n                background: #06101a;\n                border: 1px solid #28516a;\n                border-radius: 12px;\n                padding: 1px;\n            }\n            QLabel#appTitle {\n                color: #f4f8fc;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 16pt;\n                font-weight: 650;\n                letter-spacing: -0.4px;\n            }\n            QLabel#appSubtitle {\n                color: #60768b;\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 1.5px;\n            }\n            QLabel#labChip {\n                background: rgba(20, 83, 111, 72);\n                border: 1px solid #245267;\n                border-radius: 7px;\n                color: #83cfe8;\n                padding: 5px 9px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 600;\n            }\n            QLabel#systemState {\n                color: #6f8498;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 0.8px;\n            }\n            QLabel#systemState[signal="busy"] { color: #72c2f1; }\n            QLabel#systemState[signal="online"] { color: #75dcb1; }\n            QLabel#systemState[signal="error"] { color: #ef8174; }\n            QFrame#temporalContextBar {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 rgba(8, 27, 40, 244),\n                    stop: 0.48 rgba(8, 21, 31, 240),\n                    stop: 1 rgba(7, 18, 27, 244)\n                );\n                border: 1px solid #27546a;\n                border-radius: 12px;\n            }\n            QLabel#specimenEyebrow, QLabel#coordinateTitle,\n            QLabel#diagnosticTitle {\n                color: #5d91aa;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 1.3px;\n            }\n            QLabel#specimenName {\n                color: #eef8fc;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 15pt;\n                font-weight: 650;\n                letter-spacing: 0.2px;\n            }\n            QLabel#specimenMeta {\n                color: #587489;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 600;\n                letter-spacing: 0.5px;\n            }\n            QLabel#fingerprintTitle {\n                color: #5f9bb5;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.3pt;\n                font-weight: 700;\n                letter-spacing: 1.1px;\n            }\n            QFrame#temporalStatusNode {\n                background: rgba(11, 27, 39, 210);\n                border: 1px solid #203a4b;\n                border-radius: 9px;\n            }\n            QFrame#temporalStatusNode[signal="busy"] {\n                border-color: #2d6989;\n            }\n            QFrame#temporalStatusNode[signal="online"] {\n                border-color: #285c52;\n            }\n            QFrame#temporalStatusNode[signal="error"] {\n                border-color: #4c3335;\n            }\n            QLabel#temporalNodeTitle {\n                color: #55758a;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.4pt;\n                font-weight: 700;\n                letter-spacing: 1px;\n            }\n            QLabel#temporalNodeValue {\n                color: #cde0ea;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7.5pt;\n                font-weight: 700;\n            }\n            QLabel#sectionEyebrow, QLabel#cardTitle {\n                color: #6d8398;\n                font-size: 7.5pt;\n                font-weight: 700;\n                letter-spacing: 1.2px;\n            }\n            QLabel#sectionCount {\n                color: #52677b;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 600;\n            }\n            QLabel#sectionTitle {\n                color: #f1f6fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 17pt;\n                font-weight: 650;\n            }\n            QFrame#sidebar, QFrame#statCard, QFrame#playerDetail,\n            QFrame#temporalTransport {\n                background: rgba(16, 24, 34, 238);\n                border: 1px solid #1d2c3a;\n                border-radius: 13px;\n            }\n            QFrame#sidebar {\n                background: rgba(12, 19, 28, 242);\n                border-color: #1a2937;\n            }\n            QFrame#statCard {\n                background: rgba(15, 24, 34, 232);\n                border-color: #203142;\n            }\n            QFrame#temporalTransport {\n                background: rgba(8, 19, 29, 242);\n                border-color: #1d3a4d;\n            }\n            QScrollArea#cameraWorkspaceScroll,\n            QScrollArea#cameraWorkspaceScroll > QWidget > QWidget {\n                background: transparent;\n                border: 0;\n            }\n            QLabel#coordinateValue {\n                color: #8dd8f2;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7.5pt;\n                font-weight: 700;\n                letter-spacing: 0.5px;\n            }\n            QFrame#diagnosticRail {\n                background: rgba(7, 15, 23, 225);\n                border: 1px solid #162938;\n                border-radius: 8px;\n            }\n            QFrame#tableFocusRail {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 rgba(10, 42, 58, 245),\n                    stop: 0.55 rgba(9, 27, 39, 242),\n                    stop: 1 rgba(7, 19, 28, 245)\n                );\n                border: 1px solid #2a6077;\n                border-radius: 11px;\n            }\n            QLabel#focusEyebrow {\n                color: #68b2cf;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 700;\n                letter-spacing: 1.2px;\n            }\n            QLabel#focusTitle {\n                color: #f1f8fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 15pt;\n                font-weight: 650;\n            }\n            QLabel#focusMeta {\n                color: #7fb6ca;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 0.7px;\n            }\n            QLabel#diagnosticMode {\n                color: #456476;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.7pt;\n                font-weight: 700;\n                letter-spacing: 0.8px;\n            }\n            QFrame#transitionCard {\n                background: rgba(14, 23, 33, 238);\n                border: 1px solid #223448;\n                border-radius: 11px;\n            }\n            QFrame#transitionCard QLabel {\n                background: transparent;\n                border: 0;\n            }\n            QLabel#cardValue {\n                color: #f1f6fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 13.5pt;\n                font-weight: 620;\n            }\n            QLabel#heroPortrait {\n                background: #080e14;\n                border: 1px solid #365774;\n                border-radius: 12px;\n                color: #60758a;\n                font-size: 22pt;\n                font-weight: 700;\n            }\n            QLabel#playerName {\n                color: #f4f7fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 15.5pt;\n                font-weight: 650;\n            }\n            QLabel#identityBadge {\n                background: rgba(25, 55, 73, 170);\n                border: 1px solid #294b60;\n                border-radius: 6px;\n                color: #75b9d5;\n                padding: 3px 7px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.5pt;\n                font-weight: 700;\n                letter-spacing: 0.6px;\n            }\n            QFrame#sideSignal {\n                background: #4f6374;\n                border: 0;\n                border-radius: 2px;\n            }\n            QFrame#sideSignal[side="sentinel"] { background: #4ba7ed; }\n            QFrame#sideSignal[side="scourge"] { background: #d06964; }\n            QLabel#playerHero {\n                color: #6eb2ed;\n                font-size: 9.5pt;\n                font-weight: 600;\n            }\n            QLabel#playerMeta { color: #8799aa; }\n            QLabel#itemSlot {\n                background: #080e14;\n                border: 1px solid #2b4054;\n                border-radius: 9px;\n                color: #6f8295;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 8pt;\n                font-weight: 700;\n            }\n            QLabel#evidenceBadge {\n                background: rgba(28, 42, 53, 210);\n                border: 1px solid #304657;\n                border-radius: 6px;\n                color: #8094a5;\n                padding: 3px 7px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.6pt;\n                font-weight: 700;\n                letter-spacing: 0.5px;\n            }\n            QLabel#evidenceBadge[evidence="exact"] {\n                background: rgba(22, 76, 69, 150);\n                border-color: #347c69;\n                color: #83e2bd;\n            }\n            QLabel#evidenceBadge[evidence="reconstructed"] {\n                background: rgba(78, 61, 24, 150);\n                border-color: #8b7034;\n                color: #e4c774;\n            }\n            QPushButton {\n                background: #152231;\n                border: 1px solid #27394a;\n                border-radius: 8px;\n                padding: 8px 13px;\n                color: #c9d6e2;\n                font-weight: 600;\n            }\n            QPushButton:hover {\n                background: #1b2c3d;\n                border-color: #3b536a;\n                color: #f1f6fb;\n            }\n            QPushButton:pressed {\n                background: #102033;\n                border-color: #4b8ecb;\n            }\n            QPushButton[role="primary"] {\n                background: #2469aa;\n                border-color: #327dbd;\n                color: #ffffff;\n            }\n            QPushButton[role="primary"]:hover {\n                background: #2c78bb;\n                border-color: #55a0df;\n            }\n            QPushButton[role="secondary"] { background: #162433; }\n            QPushButton[density="compact"] {\n                padding: 5px 10px;\n                min-height: 18px;\n                font-size: 8.5pt;\n            }\n            QPushButton[role="ghost"] {\n                background: transparent;\n                border-color: #243546;\n                color: #8da0b3;\n            }\n            QPushButton:disabled {\n                background: #121a24;\n                border-color: #1d2935;\n                color: #526170;\n            }\n            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {\n                background: #090f16;\n                border: 1px solid #2a3c4f;\n                border-radius: 8px;\n                color: #e6edf5;\n                padding: 7px 9px;\n                selection-background-color: #245b8c;\n            }\n            QLineEdit, QSpinBox, QDoubleSpinBox, QLabel#timeLabel {\n                font-family: "Cascadia Mono", "Consolas";\n                font-variant-numeric: tabular-nums;\n            }\n            QLineEdit:focus, QComboBox:focus,\n            QSpinBox:focus, QDoubleSpinBox:focus {\n                border-color: #4b94d3;\n            }\n            QComboBox::drop-down {\n                width: 24px;\n                border: 0;\n                background: transparent;\n            }\n            QComboBox QAbstractItemView {\n                background: #101923;\n                border: 1px solid #2b4156;\n                color: #dce6ef;\n                selection-background-color: #193c5d;\n                outline: 0;\n            }\n            QCheckBox { color: #a7b6c5; spacing: 8px; }\n            QCheckBox::indicator {\n                width: 15px;\n                height: 15px;\n                background: #090f16;\n                border: 1px solid #334a60;\n                border-radius: 4px;\n            }\n            QCheckBox::indicator:checked {\n                background: #327fc2;\n                border-color: #68ace4;\n            }\n            QListWidget, QTableWidget {\n                background: rgba(12, 19, 28, 244);\n                alternate-background-color: rgba(15, 24, 34, 244);\n                border: 1px solid #1d2c3a;\n                border-radius: 11px;\n                gridline-color: transparent;\n                selection-background-color: #173e63;\n                selection-color: #f6f9fc;\n                outline: 0;\n            }\n            QListWidget::item {\n                border-radius: 9px;\n            }\n            QListWidget#replayLibrary {\n                background: transparent;\n                border: 0;\n                padding: 2px 1px;\n                outline: 0;\n            }\n            QListWidget#replayLibrary::item {\n                background: rgba(15, 24, 34, 220);\n                border: 1px solid #1e2d3b;\n                border-radius: 11px;\n                color: transparent;\n            }\n            QListWidget#replayLibrary::item:hover {\n                background: rgba(22, 36, 49, 236);\n                border-color: #354c62;\n            }\n            QListWidget#replayLibrary::item:selected {\n                background: #142f49;\n                border: 1px solid #438bc7;\n            }\n            QLabel#replayCardTitle {\n                color: #dbe5ee;\n                font-size: 9.5pt;\n                font-weight: 620;\n            }\n            QLabel#replayCardMeta {\n                color: #60758a;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 600;\n            }\n            QHeaderView::section {\n                background: #121d28;\n                color: #73879a;\n                border: 0;\n                border-bottom: 1px solid #223241;\n                padding: 9px 8px;\n                font-size: 8pt;\n                font-weight: 700;\n            }\n            QTableCornerButton::section {\n                background: #121d28;\n                border: 0;\n                border-bottom: 1px solid #223241;\n            }\n            QTabWidget::pane {\n                border: 1px solid #1d2c3a;\n                border-radius: 11px;\n                background: rgba(10, 16, 24, 238);\n            }\n            QTabBar#productTabBar::tab {\n                background: transparent;\n                color: #72869a;\n                padding: 10px 17px;\n                margin-right: 5px;\n                border: 1px solid transparent;\n                border-radius: 9px;\n                font-weight: 620;\n            }\n            QTabBar#productTabBar::tab:hover {\n                background: #111d28;\n                color: #a9bac9;\n            }\n            QTabBar#productTabBar::tab:selected {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 0, y2: 1,\n                    stop: 0 #1d3950,\n                    stop: 1 #14293b\n                );\n                border-color: #37637f;\n                color: #f0f6fb;\n            }\n            QTabBar#sectionTabBar::tab {\n                background: transparent;\n                color: #718599;\n                padding: 9px 14px;\n                border: 0;\n                border-bottom: 2px solid transparent;\n                font-size: 9pt;\n                font-weight: 600;\n            }\n            QTabBar#sectionTabBar::tab:hover { color: #b4c3d0; }\n            QTabBar#sectionTabBar::tab:selected {\n                color: #dceaf5;\n                border-bottom-color: #4a95d3;\n            }\n            QLabel#hint { color: #74889c; }\n            QLabel#statusLabel {\n                color: #64798d;\n                border: 0;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7.5pt;\n            }\n            QLabel#timeLabel {\n                color: #eaf2f8;\n                font-weight: 650;\n            }\n            QLabel#connectionStandby { color: #71889a; }\n            QLabel#connectionOffline { color: #df786a; }\n            QLabel#connectionOnline { color: #66d49b; }\n            QSlider::groove:horizontal {\n                height: 5px;\n                background: #203746;\n                border-radius: 3px;\n            }\n            QSlider::sub-page:horizontal {\n                background: #4eb8dd;\n                border-radius: 3px;\n            }\n            QSlider::handle:horizontal {\n                background: #e9f3fb;\n                border: 3px solid #42a8d3;\n                width: 12px;\n                margin: -6px 0;\n                border-radius: 9px;\n            }\n            QSplitter::handle { background: transparent; width: 10px; }\n            QScrollBar#floatingScrollBar:vertical {\n                background: transparent;\n                border: 0;\n                width: 10px;\n                margin: 0;\n            }\n            QScrollBar#floatingScrollBar:horizontal {\n                background: transparent;\n                border: 0;\n                height: 10px;\n                margin: 0;\n            }\n            QScrollBar#floatingScrollBar::handle:vertical {\n                background: transparent;\n                min-height: 34px;\n            }\n            QScrollBar#floatingScrollBar::handle:horizontal {\n                background: transparent;\n                min-width: 34px;\n            }\n            QScrollBar#floatingScrollBar::add-line,\n            QScrollBar#floatingScrollBar::sub-line {\n                width: 0;\n                height: 0;\n                background: transparent;\n                border: 0;\n            }\n            QScrollBar#floatingScrollBar::add-page,\n            QScrollBar#floatingScrollBar::sub-page {\n                background: transparent;\n                border: 0;\n            }\n            QAbstractScrollArea::corner {\n                background: transparent;\n                border: 0;\n            }\n            QToolTip {\n                background: #111b25;\n                color: #dbe5ee;\n                border: 1px solid #31475b;\n                padding: 6px;\n            }\n            ')
 
 def main() -> int:
     log_path = configure_diagnostics()
@@ -3467,7 +4174,8 @@ def main() -> int:
         actual_statistics_tabs = tuple((window.stats_sections.tabText(index) for index in range(window.stats_sections.count())))
         actual_camera_tabs = tuple((window.camera_tool_tabs.tabText(index) for index in range(window.camera_tool_tabs.count())))
         actual_view_tabs = tuple((window.view_sections.tabText(index) for index in range(window.view_sections.count())))
-        if actual_product_tabs != expected_product_tabs or actual_statistics_tabs != expected_statistics_tabs or actual_view_tabs != expected_view_tabs or (actual_camera_tabs != expected_camera_tabs) or (window.tabs.currentWidget() is not window.stats_tab) or (len(window.camera_hero_slots) != CAMERA_HERO_SLOT_COUNT) or (len(window.camera_transition_buttons) != len(CAMERA_TRANSITION_ACTIONS)) or (window.ability_hud_window._cursor_bridge.objectName() != 'abilityHudCursorBridge') or (not window.ability_hud_window._cursor_bridge.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)) or (window.ability_hud_window._cursor_timer.interval() > 16):
+        brand_pixmap = window.brand_mark.pixmap()
+        if actual_product_tabs != expected_product_tabs or actual_statistics_tabs != expected_statistics_tabs or actual_view_tabs != expected_view_tabs or (actual_camera_tabs != expected_camera_tabs) or (brand_pixmap is None) or brand_pixmap.isNull() or (window.temporal_context.objectName() != 'temporalContextBar') or (window.temporal_transport.objectName() != 'temporalTransport') or ('-test-' in window.lab_chip.text().lower()) or (window.full_table_button.text() != 'Развернуть таблицу') or (window.timeline.minimumHeight() < 54) or (window.tabs.currentWidget() is not window.stats_tab) or (len(window.camera_hero_slots) != CAMERA_HERO_SLOT_COUNT) or (len(window.camera_transition_buttons) != len(CAMERA_TRANSITION_ACTIONS)) or (window.ability_hud_window._cursor_bridge.objectName() != 'abilityHudCursorBridge') or (not window.ability_hud_window._cursor_bridge.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)) or (window.ability_hud_window._cursor_timer.interval() > 16):
             window.close()
             return 23
 
@@ -3484,6 +4192,9 @@ def main() -> int:
         window.show()
         app.processEvents()
         exercise_tabs()
+        if window.camera_scroll.verticalScrollBar().maximum() <= 0:
+            window.close()
+            return 23
         if replay_argument is not None:
             if not replay_argument.is_file():
                 window.close()
@@ -3497,7 +4208,10 @@ def main() -> int:
                 window.close()
                 return 22
             hero_count = sum((bool(player.hero_rawcode) for player in window.report.dota_players))
-            if hero_count <= 0 or not window._replay_moments or window.chat_table.rowCount() <= 0:
+            inventory_player = next((player for player in window.report.dota_players if player.inventory_source), None)
+            if inventory_player is not None:
+                window._show_player_detail(inventory_player)
+            if hero_count <= 0 or not window._replay_moments or (not any(window.temporal_fingerprint._bins)) or (window.chat_table.rowCount() <= 0) or (window.system_state_label.text() != 'REPLAY READY') or (window.temporal_source_node.value_label.text() != 'W3G / PARSED') or (not window.temporal_model_node.value_label.text().endswith('IDENTITIES')) or (inventory_player is not None and window.inventory_evidence.text() == 'NO SIGNAL'):
                 window.close()
                 return 24
             for slot_index, hero_slot in enumerate(window.camera_hero_slots):
@@ -3505,6 +4219,19 @@ def main() -> int:
                 if hero_slot.count() != hero_count + 1 or (slot_index < hero_count and (not isinstance(data, (tuple, list)) or len(data) != 3)) or (slot_index >= hero_count and data is not None):
                     window.close()
                     return 25
+            window.tabs.setCurrentWidget(window.stats_tab)
+            window.stats_sections.setCurrentIndex(0)
+            window._set_table_focus_mode(True)
+            app.processEvents()
+            focus_rows_height = sum((window.stats_table.rowHeight(row) for row in range(window.stats_table.rowCount())))
+            if not window._table_focus_mode or not window.table_focus_rail.isVisible() or window.sidebar.isVisible() or window.temporal_context.isVisible() or window.stats_cards.isVisible() or window.player_detail.isVisible() or window.temporal_transport.isVisible() or window.tabs.tabBar().isVisible() or window.stats_sections.tabBar().isVisible() or (window.stats_table.rowCount() != len(window.report.dota_players)) or (window.stats_table.viewport().height() < focus_rows_height):
+                window.close()
+                return 27
+            window._set_table_focus_mode(False)
+            app.processEvents()
+            if window._table_focus_mode or window.table_focus_rail.isVisible() or (not window.sidebar.isVisible()) or (not window.temporal_context.isVisible()) or (not window.temporal_transport.isVisible()) or (not window.tabs.tabBar().isVisible()):
+                window.close()
+                return 27
             exercise_tabs()
         window.close()
         app.processEvents()

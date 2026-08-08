@@ -34,6 +34,14 @@ def release_build_id() -> str | None:
         return None
     return build_id.strip()
 
+def compact_build_id(build_id: str | None) -> str:
+    if not build_id:
+        return 'DEVELOPMENT'
+    version = re.match('^\\d+\\.\\d+\\.\\d+', build_id.strip())
+    if version is not None:
+        return version.group(0)
+    return build_id.split('-', 1)[0][:24] or 'DEVELOPMENT'
+
 @lru_cache(maxsize=1)
 def load_asset_manifest() -> dict[str, object]:
     manifest_path = project_root() / 'assets' / 'iccup' / 'manifest.json'
