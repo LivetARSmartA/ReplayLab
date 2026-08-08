@@ -3,8 +3,10 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from .diagnostics import get_logger
 from .native_runtime import native_binary_candidates
 PROBE_OUTPUT = re.compile('^(invalid-image|invalid-pattern|not-found|unique|ambiguous)\\trva=0x([0-9A-Fa-f]{8})\\tmatches=(\\d+)$')
+LOGGER = get_logger('signature_probe')
 
 class NativeSignatureError(RuntimeError):
     pass
@@ -40,7 +42,10 @@ def probe_pe_signature(path: str | Path, pattern: str, *, all_sections: bool=Fal
     if all_sections:
         command.append('--all-sections')
     completed = subprocess.run(command, capture_output=True, text=True, timeout=10, check=False, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    if completed.stderr.strip():
+        LOGGER.warning('Signature probe stderr: %s', completed.stderr.strip())
     if completed.returncode not in (0, 2, 3):
+        LOGGER.error('Signature probe failed: exit_code=%s image=%s', completed.returncode, pe_path)
         raise NativeSignatureError(f'Нативный сканер аварийно завершился: {completed.returncode}')
     output = completed.stdout.strip()
     if not output:

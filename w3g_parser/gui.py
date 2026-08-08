@@ -4,23 +4,27 @@ import math
 import sys
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable
-from PySide6.QtCore import QSettings, QSize, QTimer, Qt, QThreadPool, QRunnable, Signal, QObject
+from PySide6.QtCore import QSettings, QSize, QTimer, Qt, QThreadPool, QRunnable, Signal, Slot, QObject
 from PySide6.QtGui import QColor, QCloseEvent, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget, QListWidgetItem, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter, QStyle, QStyleOptionSlider, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from .assets import app_icon_path, hero_icon_path, item_icon_path, release_build_id
-from .ability_hud import AbilityHudWindow, AbilityTelemetryService
-from .ability_profile import AbilityDefinition, get_ability_profile
+from .ability_hud import AbilityHudSelectionArbiter, AbilityHudWindow, AbilityTelemetryService
+from .ability_profile import AbilityDefinition, get_ability_catalog, get_ability_profile
 from .camera import CameraMotionSettings, SmoothCameraController
 from .camera_input import CameraInputRouter, KEY_CHOICES
 from .camera_modes import CAMERA_TRANSITION_PRESETS, DEFAULT_CUSTOM_TRANSITION, CameraTransitionKind, CameraTransitionSpec, tune_transition
+from .dota_profile import DOTA_HERO_NAMES
+from .diagnostics import configure_diagnostics, get_logger, is_critical_runtime_error, supported_windows_version
 from .launcher import WarcraftLaunchError, WarcraftReplayLauncher, likely_iccup_launchers, likely_warcraft_executables
 from .moments import ReplayMoment, ReplayMomentKind, build_replay_moments
 from .native_camera import DroneSettings
-from .parser import ChatMessage, DotaPlayer, ItemTiming, ReplayReport, parse_replay
+from .parser import ChatMessage, DotaPlayer, ItemTiming, ReplayReport, invoker_spells_at, parse_replay
 from .seeker import AttachResult, SEEK_PROFILES, SeekBackendError, SeekCancelled, SeekMetrics, SeekProfile, SeekProgress, Warcraft126MemoryBackend
 from .settings import discover_replays, forget_failed_replay, recover_persistent_settings
+LOGGER = get_logger('ui')
 APP_NAME = 'Warcraft III Replay Lab'
 CAMERA_HERO_SLOT_COUNT = 10
 CAMERA_CORE_MACRO_ACTIONS = (('toggle_camera', 'Камера: вкл / выкл', 119), ('follow_toggle', 'Follow: вкл / выкл', 118), ('smart_follow_toggle', 'Smart Follow', 116), ('reset_view', 'Вернуть обзор', 120))
@@ -70,11 +74,33 @@ def post_attach_seek_target(backward_launch_armed: bool, pending_seek: int | Non
         return None
     return pending_seek
 
+def replay_hero_for_selection(players: list[DotaPlayer], player_slot: int | None, hero_rawcode: str | None) -> tuple[int, str, str] | None:
+    if player_slot is None or hero_rawcode is None:
+        return None
+    selected_name = DOTA_HERO_NAMES.get(hero_rawcode)
+    if selected_name is None:
+        return None
+    for player in players:
+        if player.slot != player_slot or not player.hero_rawcode:
+            continue
+        replay_name = player.hero_name or DOTA_HERO_NAMES.get(player.hero_rawcode)
+        if hero_rawcode != player.hero_rawcode and selected_name != replay_name:
+            return None
+        return (player.slot, hero_rawcode, f'{player.name} · {selected_name}')
+    return None
+
+def replay_hero_targets(players: list[DotaPlayer]) -> list[tuple[str, tuple[int, str, str]]]:
+    targets: list[tuple[str, tuple[int, str, str]]] = []
+    for player in players:
+        if not player.hero_rawcode:
+            continue
+        hero = player.hero_name or player.hero_rawcode
+        label = f'{player.name} · {hero}'
+        targets.append((label, (player.slot, player.hero_rawcode, label)))
+    return targets
+
 def number(value: int | None) -> str:
     return '—' if value is None else f'{value:,}'.replace(',', ' ')
-
-def format_seek_speed(value: int) -> str:
-    return 'максимум' if value == 65535 else f'{value}x'
 
 def parse_time_input(value: str) -> int:
     normalized = value.strip().replace('.', ':').replace(',', ':')
@@ -347,6 +373,7 @@ class CameraSignals(QObject):
 
 class CameraMacroSignals(QObject):
     triggered = Signal(str)
+    selection_intent = Signal()
 
 class CameraService(QObject):
 
@@ -416,6 +443,7 @@ class CameraService(QObject):
         try:
             controller.update_drone_settings(settings)
         except (SeekBackendError, OSError, ValueError) as exc:
+            LOGGER.error('Drone settings update failed: %s', exc)
             self.signals.failed.emit(str(exc))
 
     def _begin(self, job: Callable[[], None], *, reset_cancel: bool=False) -> bool:
@@ -434,9 +462,11 @@ class CameraService(QObject):
             except SeekCancelled:
                 pass
             except (SeekBackendError, OSError, ValueError) as exc:
+                LOGGER.error('Camera task failed: %s', exc)
                 self.signals.failed.emit(str(exc))
-            except Exception as exc:
-                self.signals.failed.emit(f'Неожиданная ошибка Camera Engine: {exc}')
+            except Exception:
+                LOGGER.exception('Unexpected camera task failure')
+                self.signals.failed.emit('Камера остановлена из-за внутренней ошибки.')
             finally:
                 with self._lock:
                     self._busy = False
@@ -445,6 +475,7 @@ class CameraService(QObject):
         return True
 
     def _runtime_failed(self, message: str) -> None:
+        LOGGER.error('Camera runtime stopped: %s', message)
         self.signals.failed.emit(message)
 
         def cleanup() -> None:
@@ -809,10 +840,14 @@ class ReplayLabWindow(QMainWindow):
         self._auto_attach_deadline = 0.0
         self.seeker = SeekerService()
         self.camera_macro_signals = CameraMacroSignals()
-        self.camera_input = CameraInputRouter(self.camera_macro_signals.triggered.emit)
+        self.camera_input = CameraInputRouter(self.camera_macro_signals.triggered.emit, self.camera_macro_signals.selection_intent.emit)
         self.camera_service = CameraService(self.camera_input)
         self.ability_hud_service = AbilityTelemetryService()
         self.ability_hud_window = AbilityHudWindow()
+        self._ability_hud_display_target: tuple[int, str] | None = None
+        self._ability_hud_requested_target: tuple[int, str] | None = None
+        self._ability_hud_address_cache: dict[tuple[int, str], int] = {}
+        self._ability_hud_selection = AbilityHudSelectionArbiter()
         self.launcher = WarcraftReplayLauncher()
         self._build_ui()
         self._wire_seeker()
@@ -820,6 +855,10 @@ class ReplayLabWindow(QMainWindow):
         self._wire_ability_hud()
         self._apply_style()
         self.camera_macro_signals.triggered.connect(self._camera_macro_triggered)
+        self.camera_macro_signals.selection_intent.connect(self._ability_hud_pointer_selection)
+        self._camera_input_poll = QTimer(self)
+        self._camera_input_poll.setInterval(25)
+        self._camera_input_poll.timeout.connect(self.camera_input.poll_passthrough_actions)
         self._camera_input_ready = False
         try:
             self.camera_input.start()
@@ -828,6 +867,7 @@ class ReplayLabWindow(QMainWindow):
             QTimer.singleShot(0, lambda message=str(exc): self._camera_error(message))
         else:
             self._camera_input_ready = True
+            self._camera_input_poll.start()
         indexed_paths = set(self._manual_replay_paths)
         for replay_root in self._replay_roots:
             indexed_paths.update(discover_replays(replay_root))
@@ -1074,7 +1114,7 @@ class ReplayLabWindow(QMainWindow):
         stored_profile = str(self.settings.value('seek_profile', 'balanced'))
         profile_index = self.seek_profile.findData(stored_profile)
         self.seek_profile.setCurrentIndex(profile_index if profile_index >= 0 else 1)
-        self.seek_profile.setToolTip('Eco снижает нагрев. Balanced ограничен 32x. Maximum временно запрашивает HighQoS и использует максимум Warcraft.')
+        self.seek_profile.setToolTip('Eco работает бережнее, Balanced — до 32x, Maximum — максимально быстро.')
         self.seek_profile.currentIndexChanged.connect(lambda: self.settings.setValue('seek_profile', self.seek_profile.currentData()))
         self.seek_button.setEnabled(False)
         self.cancel_button.setEnabled(False)
@@ -1392,7 +1432,7 @@ class ReplayLabWindow(QMainWindow):
         panel_layout.setSpacing(14)
         title = QLabel('ПЛАВНАЯ КАМЕРА')
         title.setObjectName('playerName')
-        description = QLabel('Камера получает мягкий разгон и торможение, не зависящие от FPS. Управление работает, пока активным окном является Warcraft.')
+        description = QLabel('Плавное управление камерой прямо во время просмотра реплея.')
         description.setWordWrap(True)
         description.setObjectName('playerMeta')
         panel_layout.addWidget(title)
@@ -1608,7 +1648,7 @@ class ReplayLabWindow(QMainWindow):
         drone_layout = QVBoxLayout(drone_page)
         drone_layout.setContentsMargins(16, 14, 16, 14)
         drone_layout.setSpacing(12)
-        drone_intro = QLabel('Свободный нативный полёт с инерцией и автоматическим креном. Захват цели использует выбранного героя: движение вперёд становится наездом, стрейф — ручным облётом, а Orbit ведёт круг автоматически и плавно переходит между тремя радиусами.')
+        drone_intro = QLabel('Свободный полёт с инерцией и автоматическим креном. Захват цели использует выбранного героя: движение вперёд становится наездом, стрейф — ручным облётом, а Orbit ведёт круг автоматически и плавно переходит между тремя радиусами.')
         drone_intro.setObjectName('playerMeta')
         drone_intro.setWordWrap(True)
         drone_layout.addWidget(drone_intro)
@@ -1728,7 +1768,7 @@ class ReplayLabWindow(QMainWindow):
         for spin in self.camera_drone_tuning_widgets.values():
             spin.valueChanged.connect(lambda _value: self._drone_tuning_changed())
         drone_layout.addWidget(drone_tuning)
-        drone_help = QLabel('Стрелки — полёт / орбита · Insert/Delete — поворот · Home/End — наклон · Page Up/Page Down — наезд · Num 7/Num 9 — кольцо ближе/дальше · Num 8/Num 2 — Orbit и реверс · высота и разворот на 180° назначаются выше. При потере пакетов дрон сам тормозит.')
+        drone_help = QLabel('Стрелки — полёт / орбита · Insert/Delete — поворот · Home/End — наклон · Page Up/Page Down — наезд · Num 7/Num 9 — кольцо ближе/дальше · Num 8/Num 2 — Orbit и реверс · высота и разворот на 180° назначаются выше.')
         drone_help.setObjectName('hint')
         drone_help.setWordWrap(True)
         drone_layout.addWidget(drone_help)
@@ -1744,7 +1784,7 @@ class ReplayLabWindow(QMainWindow):
         ability_layout = QVBoxLayout(ability_page)
         ability_layout.setContentsMargins(16, 14, 16, 14)
         ability_layout.setSpacing(12)
-        ability_intro = QLabel('Независимый read-only HUD закрывает replay-панель Warcraft живыми способностями выбранного героя. Уровни и кулдауны читаются из Game.dll отдельным C++ Telemetry Host; Seeker и Camera Engine для этого не нужны.')
+        ability_intro = QLabel('Живые способности, уровни и кулдауны выбранного героя.')
         ability_intro.setObjectName('playerMeta')
         ability_intro.setWordWrap(True)
         ability_layout.addWidget(ability_intro)
@@ -1764,17 +1804,17 @@ class ReplayLabWindow(QMainWindow):
         self.ability_hud_stop_button = QPushButton('Выключить')
         self.ability_hud_stop_button.setEnabled(False)
         ability_controls_layout.addWidget(self.ability_hud_stop_button, 1, 1)
-        ability_controls_layout.addWidget(QLabel('Показать / скрыть'), 2, 0)
+        self.ability_hud_follow_selection = QCheckBox('Следить за выбором героя в Warcraft')
+        self.ability_hud_follow_selection.setChecked(str(self.settings.value('ability_hud_follow_selection', 'true')).lower() == 'true')
+        self.ability_hud_follow_selection.setToolTip('Клик по герою или клавиша слота 1–0 переключает выбранного героя и Skills HUD.')
+        ability_controls_layout.addWidget(self.ability_hud_follow_selection, 2, 0, 1, 3)
+        ability_controls_layout.addWidget(QLabel('Показать / скрыть'), 3, 0)
         self.ability_hud_hotkey = QComboBox()
         self.ability_hud_hotkey.setMinimumWidth(110)
         self._setup_camera_macro_combo(self.ability_hud_hotkey, ABILITY_HUD_MACRO_ACTION[0], ABILITY_HUD_MACRO_ACTION[2])
-        ability_controls_layout.addWidget(self.ability_hud_hotkey, 2, 1)
+        ability_controls_layout.addWidget(self.ability_hud_hotkey, 3, 1)
         ability_controls_layout.setColumnStretch(2, 1)
         ability_layout.addWidget(ability_controls)
-        ability_fact = QLabel('Контур безопасности: PROCESS_VM_READ · без инъекции · без хуков · без WriteProcessMemory · IPC protocol v1.')
-        ability_fact.setObjectName('hint')
-        ability_fact.setWordWrap(True)
-        ability_layout.addWidget(ability_fact)
         self.ability_hud_status = QLabel('Открой распознанный replay в Warcraft и выбери героя.')
         self.ability_hud_status.setObjectName('connectionOffline')
         self.ability_hud_status.setWordWrap(True)
@@ -1784,6 +1824,7 @@ class ReplayLabWindow(QMainWindow):
         self.ability_hud_start_button.clicked.connect(self._start_ability_hud)
         self.ability_hud_stop_button.clicked.connect(self.ability_hud_service.stop)
         self.ability_hud_player.currentIndexChanged.connect(lambda _index: self._ability_hud_target_changed())
+        self.ability_hud_follow_selection.toggled.connect(self._ability_hud_follow_selection_changed)
         self._normalize_camera_macro_bindings()
         self._sync_camera_macro_bindings()
         self.camera_status = QLabel('Открой реплей в Warcraft и включи независимый Camera Engine.')
@@ -1823,7 +1864,7 @@ class ReplayLabWindow(QMainWindow):
         signals = self.seeker.signals
         signals.operation_started.connect(self._seeker_started)
         signals.operation_finished.connect(self._seeker_finished)
-        signals.scan_progress.connect(lambda value: self.seek_status.setText(f'Ищу активный реплей в памяти Warcraft… {value}%'))
+        signals.scan_progress.connect(lambda value: self.seek_status.setText(f'Подключаюсь к активному реплею… {value}%'))
         signals.attached.connect(self._seeker_attached)
         signals.seek_progress.connect(self._seek_progress)
         signals.seek_metrics.connect(self._seek_metrics)
@@ -1855,7 +1896,7 @@ class ReplayLabWindow(QMainWindow):
         signals = self.ability_hud_service.signals
         signals.operation_started.connect(self._ability_hud_started)
         signals.ready.connect(self._ability_hud_ready)
-        signals.snapshot.connect(self.ability_hud_window.update_snapshot)
+        signals.snapshot.connect(self._ability_hud_snapshot)
         signals.transient.connect(self._ability_hud_transient)
         signals.failed.connect(self._ability_hud_error)
         signals.stopped.connect(self._ability_hud_stopped)
@@ -2125,19 +2166,21 @@ class ReplayLabWindow(QMainWindow):
 
     def _launch_ready(self, result: tuple[int, Path, str, bool]) -> None:
         pid, path, launch_mode, launch_verified = result
-        self.connection_label.setText(f'Replay запущен · PID {pid}' if launch_verified else f'Warcraft запускается · PID {pid}')
+        LOGGER.info('Replay launch ready: pid=%s path=%s mode=%s verified=%s', pid, path, launch_mode, launch_verified)
+        self.connection_label.setText('Replay запущен' if launch_verified else 'Warcraft запускается')
         self.connection_label.setObjectName('connectionOffline')
         self.connection_label.style().unpolish(self.connection_label)
         self.connection_label.style().polish(self.connection_label)
         if launch_verified:
-            self.seek_status.setText(f'{path.name} запущен {launch_mode}; живой replay подтверждён.')
+            self.seek_status.setText(f'{path.name} запущен.')
         else:
-            self.seek_status.setText(f'{path.name} открыт {launch_mode}. Seeker подключится после загрузки автоматически.')
+            self.seek_status.setText(f'{path.name} открыт. Жду загрузки реплея…')
         self._schedule_auto_attach(pid, delay_ms=150 if launch_verified else 2500)
         if post_attach_seek_target(self._backward_launch_armed, self._pending_backward_seek) is not None:
             self.seek_status.setText('Возврат назад · replay перезапущен, подключаюсь…')
 
     def _launch_failed(self, message: str) -> None:
+        LOGGER.error('Replay launch failed: %s', message)
         self._auto_attach_pid = None
         self.attach_button.setVisible(False)
         if self._pending_backward_seek is not None:
@@ -2192,6 +2235,7 @@ class ReplayLabWindow(QMainWindow):
         self._parse_task = None
 
     def _parse_error(self, message: str) -> None:
+        LOGGER.error('Replay parsing failed: %s', message)
         forget_failed_replay(self.settings, self.current_path)
         self.status_label.setText('Не удалось разобрать реплей.')
         QMessageBox.critical(self, 'Ошибка парсера', message)
@@ -2233,9 +2277,10 @@ class ReplayLabWindow(QMainWindow):
             result = 'Победа' if player.won is True else 'Поражение' if player.won is False else '—'
             creep_values = [number(player.creep_kills), number(player.creep_denies), number(player.neutral_kills)]
             creep_tooltip: str | None = None
-            if player.creep_stats_source == 'periodic-snapshot':
+            if player.creep_stats_source in {'periodic-snapshot', 'leave-summary'}:
                 creep_values = [f'≈{value}' if value != '—' else value for value in creep_values]
-                creep_tooltip = f'Последний доступный срез карты на {format_time(player.creep_stats_game_time_ms)}. Финальный блок статистики не был записан.'
+                source_label = 'Статистика игрока при выходе' if player.creep_stats_source == 'leave-summary' else 'Последний доступный срез карты'
+                creep_tooltip = f'{source_label} на {format_time(player.creep_stats_game_time_ms)}. Финальный блок статистики не был записан.'
             elif player.creep_stats_source == 'final':
                 creep_tooltip = 'Финальная статистика карты.'
             values = [player.name, player.hero_name or player.hero_rawcode or '—', player.side or '—', result, number(player.kills), number(player.deaths), number(player.assists), *creep_values, number(player.final_gold), number(player.inventory_value), number(player.net_worth), '—' if player.apm_average is None else f'{player.apm_average:.1f}', number(player.apm_peak_60s), format_time(player.apm_peak_game_time_ms), f'{number(player.tower_kills)} / {number(player.rax_kills)}']
@@ -2281,18 +2326,13 @@ class ReplayLabWindow(QMainWindow):
     def _fill_camera_players(self, report: ReplayReport) -> None:
         if not hasattr(self, 'camera_hero_slots'):
             return
-        heroes: list[tuple[str, tuple[int, str, str]]] = []
-        for player in report.dota_players:
-            if player.hero_rawcode:
-                hero = player.hero_name or player.hero_rawcode
-                label = f'{player.name} · {hero}'
-                heroes.append((label, (player.slot, player.hero_rawcode, label)))
+        heroes = replay_hero_targets(report.dota_players)
         for slot_index, combo in enumerate(self.camera_hero_slots):
             combo.clear()
+            combo.addItem('—', None)
             for label, data in heroes:
                 combo.addItem(label, data)
-            if combo.count():
-                combo.setCurrentIndex(min(slot_index, combo.count() - 1))
+            combo.setCurrentIndex(slot_index + 1 if slot_index < len(heroes) else 0)
         if hasattr(self, 'ability_hud_player'):
             self.ability_hud_player.blockSignals(True)
             self.ability_hud_player.clear()
@@ -2518,25 +2558,38 @@ class ReplayLabWindow(QMainWindow):
         self._pending_backward_deadline = 0.0
         self._pending_attach_attempt = False
 
-    def _ability_hud_target(self) -> tuple[int, str, str, dict[str, AbilityDefinition], tuple[str, ...]]:
+    def _ability_hud_target(self, live_target: tuple[int, str, str] | None=None) -> tuple[int, str, str, dict[str, AbilityDefinition], tuple[str, ...]]:
         if self.report is None:
             raise SeekBackendError('Сначала выбери распознанный replay.')
-        data = self.ability_hud_player.currentData()
+        data = live_target if live_target is not None else self.ability_hud_player.currentData()
         if not isinstance(data, (tuple, list)) or len(data) != 3:
             raise SeekBackendError('В replay не найден герой для Skills HUD.')
         profile = get_ability_profile(self.report.map_path)
+        definitions = profile.abilities if profile is not None else get_ability_catalog()
         if profile is None:
-            raise SeekBackendError('Для этой версии карты ещё нет проверенного профиля способностей.')
+            LOGGER.info('Skills HUD is using the universal catalog: map=%s', self.report.map_path)
         player_slot = int(data[0])
         hero_rawcode = str(data[1])
         label = str(data[2])
         preferred = tuple(dict.fromkeys((event.ability_rawcode for event in self.report.skill_learns if event.player_slot == player_slot)))
-        return (player_slot, hero_rawcode, label, profile.abilities, preferred)
+        return (player_slot, hero_rawcode, label, definitions, preferred)
 
-    def _prepare_ability_hud_target(self) -> tuple[int, str]:
-        player_slot, hero_rawcode, label, definitions, preferred = self._ability_hud_target()
+    def _prepare_ability_hud_target(self, live_target: tuple[int, str, str] | None=None, *, sync_selector: bool=False) -> tuple[int, str]:
+        player_slot, hero_rawcode, label, definitions, preferred = self._ability_hud_target(live_target)
         self.ability_hud_window.set_target(label, definitions, preferred)
+        self._ability_hud_display_target = (player_slot, hero_rawcode)
+        if sync_selector:
+            self._sync_ability_hud_player(player_slot)
         return (player_slot, hero_rawcode)
+
+    def _sync_ability_hud_player(self, player_slot: int) -> None:
+        for index in range(self.ability_hud_player.count()):
+            data = self.ability_hud_player.itemData(index)
+            if isinstance(data, (tuple, list)) and len(data) >= 1 and (int(data[0]) == player_slot):
+                self.ability_hud_player.blockSignals(True)
+                self.ability_hud_player.setCurrentIndex(index)
+                self.ability_hud_player.blockSignals(False)
+                return
 
     def _start_ability_hud(self) -> None:
         if not self._camera_input_ready:
@@ -2547,7 +2600,9 @@ class ReplayLabWindow(QMainWindow):
         except (SeekBackendError, ValueError) as exc:
             self._ability_hud_error(str(exc))
             return
-        self.ability_hud_service.start(player_slot, hero_rawcode)
+        self._ability_hud_requested_target = None
+        self._ability_hud_selection.clear()
+        self.ability_hud_service.start(player_slot, hero_rawcode, targets=self._ability_hud_roster())
 
     def _auto_start_ability_hud(self, process_id: int) -> None:
         if self.report is None or self.ability_hud_player.count() <= 0 or self.ability_hud_service.busy:
@@ -2558,7 +2613,17 @@ class ReplayLabWindow(QMainWindow):
             self.ability_hud_status.setText(str(exc))
             return
         self.ability_hud_status.setText('Replay запущен · включаю Skills HUD автоматически…')
-        self.ability_hud_service.start(player_slot, hero_rawcode, process_id=process_id)
+        self._ability_hud_requested_target = None
+        self._ability_hud_selection.clear()
+        self.ability_hud_service.start(player_slot, hero_rawcode, process_id=process_id, targets=self._ability_hud_roster())
+
+    def _ability_hud_roster(self) -> list[tuple[int, str]]:
+        targets: list[tuple[int, str]] = []
+        for index in range(self.ability_hud_player.count()):
+            data = self.ability_hud_player.itemData(index)
+            if isinstance(data, (tuple, list)) and len(data) >= 2:
+                targets.append((int(data[0]), str(data[1])))
+        return targets
 
     def _ability_hud_target_changed(self) -> None:
         if self.report is None or self.ability_hud_player.currentIndex() < 0:
@@ -2566,35 +2631,90 @@ class ReplayLabWindow(QMainWindow):
         try:
             player_slot, hero_rawcode = self._prepare_ability_hud_target()
             if self.ability_hud_service.busy:
-                self.ability_hud_service.set_target(player_slot, hero_rawcode)
+                self._ability_hud_selection.pin_explicit_target(player_slot)
+                self._ability_hud_requested_target = (player_slot, hero_rawcode)
+                self.ability_hud_service.set_target(player_slot, hero_rawcode, self._ability_hud_address_cache.get((player_slot, hero_rawcode), 0))
         except (SeekBackendError, ValueError) as exc:
             self.ability_hud_status.setText(str(exc))
+
+    def _ability_hud_follow_selection_changed(self, checked: bool) -> None:
+        self.settings.setValue('ability_hud_follow_selection', checked)
+        self._ability_hud_requested_target = None
+        self._ability_hud_selection.clear()
+        if not checked and self.ability_hud_service.busy:
+            self._ability_hud_target_changed()
+
+    @Slot()
+    def _ability_hud_pointer_selection(self) -> None:
+        self._ability_hud_selection.begin_pointer_selection()
+
+    def _ability_hud_snapshot(self, snapshot: object) -> None:
+        if not hasattr(snapshot, 'hero_rawcode'):
+            return
+        selected_target = replay_hero_for_selection(self.report.dota_players, snapshot.selected_player_slot, snapshot.selected_unit_rawcode) if self.report is not None else None
+        selection_allowed = self._ability_hud_selection.observe(snapshot.selected_unit_address, snapshot.selected_player_slot, snapshot.selected_unit_rawcode, selectable=selected_target is not None)
+        current_key = (snapshot.player_slot, snapshot.hero_rawcode)
+        if snapshot.hero_address:
+            self._ability_hud_address_cache[current_key] = snapshot.hero_address
+        if self._ability_hud_requested_target == current_key:
+            self._ability_hud_requested_target = None
+        waiting_for_target = self._ability_hud_requested_target is not None and self._ability_hud_requested_target != current_key
+        current_target = replay_hero_for_selection(self.report.dota_players, snapshot.player_slot, snapshot.hero_rawcode) if self.report is not None else None
+        if not waiting_for_target:
+            if current_target is not None and self._ability_hud_display_target != current_key:
+                self._prepare_ability_hud_target(current_target, sync_selector=True)
+            if self.report is not None and snapshot.hero_rawcode == 'H00U':
+                snapshot = replace(snapshot, invoked_spell_rawcodes=invoker_spells_at(self.report.invoker_invokes, snapshot.player_slot, snapshot.game_time_ms))
+            self.ability_hud_window.update_snapshot(snapshot)
+        if self.report is None or not self.ability_hud_follow_selection.isChecked() or (not selection_allowed):
+            return
+        if selected_target is None:
+            return
+        selected_key = (selected_target[0], selected_target[1])
+        if snapshot.selected_unit_address:
+            self._ability_hud_address_cache[selected_key] = snapshot.selected_unit_address
+        if selected_key == current_key:
+            self._ability_hud_requested_target = None
+            return
+        if self._ability_hud_requested_target == selected_key:
+            return
+        try:
+            self.ability_hud_service.set_target(selected_key[0], selected_key[1], snapshot.selected_unit_address)
+        except (SeekBackendError, ValueError) as exc:
+            self.ability_hud_status.setText(str(exc))
+            return
+        self._ability_hud_requested_target = selected_key
 
     def _ability_hud_started(self) -> None:
         self.ability_hud_start_button.setEnabled(False)
         self.ability_hud_stop_button.setEnabled(True)
         self.ability_hud_player.setEnabled(False)
-        self.ability_hud_status.setText('Ищу героя и проверяю read-only цепочку Game.dll…')
+        self.ability_hud_status.setText('Жду загрузки реплея и появления героя…')
 
     def _ability_hud_ready(self, snapshot: object) -> None:
         if not hasattr(snapshot, 'process_id'):
             return
+        self.camera_input.set_hud_process(int(snapshot.process_id))
         self.ability_hud_player.setEnabled(True)
         self.ability_hud_stop_button.setEnabled(True)
-        self.ability_hud_window.update_snapshot(snapshot)
+        self._ability_hud_snapshot(snapshot)
         self.ability_hud_window.set_active(True)
-        self.ability_hud_status.setText(f'Skills HUD активен · PID {snapshot.process_id} · 20 Гц · Game.dll read-only · F4 показать/скрыть')
+        self.ability_hud_status.setText('Skills HUD активен · F4 показать/скрыть')
         self.ability_hud_status.setObjectName('connectionOnline')
         self.ability_hud_status.style().unpolish(self.ability_hud_status)
         self.ability_hud_status.style().polish(self.ability_hud_status)
 
-    def _ability_hud_transient(self, message: str) -> None:
-        self.ability_hud_status.setText(f'Skills HUD ждёт стабильный объект героя · {message}')
+    def _ability_hud_transient(self, _message: str) -> None:
+        self.ability_hud_status.setText('Жду появления героя в реплее…')
 
     def _ability_hud_stopped(self) -> None:
         if not hasattr(self, 'ability_hud_start_button'):
             return
         self.ability_hud_window.set_active(False)
+        self.camera_input.set_hud_process(None)
+        self._ability_hud_display_target = None
+        self._ability_hud_requested_target = None
+        self._ability_hud_selection.clear()
         self.ability_hud_start_button.setEnabled(self.report is not None and self.ability_hud_player.count() > 0)
         self.ability_hud_stop_button.setEnabled(False)
         self.ability_hud_player.setEnabled(True)
@@ -2604,9 +2724,11 @@ class ReplayLabWindow(QMainWindow):
         self.ability_hud_status.style().polish(self.ability_hud_status)
 
     def _ability_hud_error(self, message: str) -> None:
+        LOGGER.error('Skills HUD stopped: %s', message)
         self.ability_hud_window.set_active(False)
-        self.ability_hud_status.setText(message)
-        QMessageBox.warning(self, 'Skills HUD', message)
+        self.ability_hud_status.setText('Skills HUD недоступен. Подробности сохранены в журнале.' if is_critical_runtime_error(message) else message)
+        if is_critical_runtime_error(message):
+            QMessageBox.critical(self, 'Skills HUD', 'Skills HUD не может продолжить работу. Переустанови ReplayLab или пришли диагностический журнал.')
 
     def _seek_after_backward_attach(self, target: int, profile: SeekProfile) -> None:
         if self.seeker.busy:
@@ -2622,7 +2744,7 @@ class ReplayLabWindow(QMainWindow):
         self._persist_camera_tuning(settings)
         drone_settings = self._drone_settings()
         self._persist_drone_settings(drone_settings)
-        self.camera_status.setText('Ищу камеру Warcraft в памяти…')
+        self.camera_status.setText('Подключаю камеру…')
         self.camera_service.start(settings, drone_settings)
 
     def _follow_camera_player(self) -> None:
@@ -2636,6 +2758,21 @@ class ReplayLabWindow(QMainWindow):
             self.camera_status.setText('Сначала выбери реплей с распознанными героями.')
             return
         self.camera_service.follow_player_hero(int(data[0]), str(data[1]), str(data[2]))
+
+    def _follow_ability_hud_slot(self, slot_index: int) -> None:
+        if not self.ability_hud_service.busy or not 0 <= slot_index < len(self.camera_hero_slots):
+            return
+        data = self.camera_hero_slots[slot_index].currentData()
+        if not isinstance(data, (tuple, list)) or len(data) != 3:
+            return
+        try:
+            player_slot, hero_rawcode = self._prepare_ability_hud_target((int(data[0]), str(data[1]), str(data[2])), sync_selector=True)
+            self._ability_hud_selection.pin_explicit_target(player_slot)
+            self.ability_hud_service.set_target(player_slot, hero_rawcode, self._ability_hud_address_cache.get((player_slot, hero_rawcode), 0))
+        except (SeekBackendError, ValueError) as exc:
+            self.ability_hud_status.setText(str(exc))
+            return
+        self._ability_hud_requested_target = (player_slot, hero_rawcode)
 
     def _prepare_camera_hero_slot(self, slot_index: int) -> None:
         if not self.camera_service.running or not 0 <= slot_index < len(self.camera_hero_slots):
@@ -2702,7 +2839,9 @@ class ReplayLabWindow(QMainWindow):
                 slot_index = int(action.rsplit('_', 1)[1]) - 1
             except ValueError:
                 return
+            LOGGER.info('Observer hero bind: slot=%s hud=%s camera=%s', slot_index + 1, self.ability_hud_service.running, self.camera_service.running)
             self._follow_camera_slot(slot_index)
+            self._follow_ability_hud_slot(slot_index)
 
     def _sync_orbit_ring_controls(self, active: bool, ring_index: int) -> str:
         selected = min(max(int(ring_index), 0), 2)
@@ -2714,7 +2853,7 @@ class ReplayLabWindow(QMainWindow):
         self.camera_start_button.setEnabled(False)
         self.camera_stop_button.setEnabled(True)
         self.camera_preset.setEnabled(True)
-        self.camera_follow_button.setEnabled(self.camera_follow_player.count() > 0)
+        self.camera_follow_button.setEnabled(self.camera_follow_player.currentData() is not None)
         self.camera_unfollow_button.setEnabled(False)
         self.camera_smart_follow_button.setEnabled(False)
         for button in self.camera_transition_buttons.values():
@@ -2729,8 +2868,7 @@ class ReplayLabWindow(QMainWindow):
             turn_button.setEnabled(False)
         self.camera_service.update_settings(self._camera_motion_settings())
         self.camera_service.update_drone_settings(self._drone_settings())
-        update_hz = self.camera_service.native_update_hz
-        self.camera_status.setText(f'Камера активна · нативная плавность {update_hz} Гц · защита границ включена')
+        self.camera_status.setText('Камера активна')
         self.camera_status.setObjectName('connectionOnline')
         self.camera_status.style().unpolish(self.camera_status)
         self.camera_status.style().polish(self.camera_status)
@@ -2743,18 +2881,16 @@ class ReplayLabWindow(QMainWindow):
 
     def _camera_state_changed(self, state: object) -> None:
         if self.camera_service.drone_enabled:
-            update_hz = self.camera_service.native_update_hz
             if self.camera_service.orbit_enabled:
                 direction = 'влево' if self.camera_service.orbit_direction > 0 else 'вправо'
                 ring_label = self._sync_orbit_ring_controls(True, self.camera_service.orbit_ring_index)
-                self.camera_status.setText(f'Orbit · {ring_label} орбита · облёт {direction} · нативная физика {update_hz} Гц')
+                self.camera_status.setText(f'Orbit · {ring_label} орбита · облёт {direction}')
                 return
             lock_text = ' · захват цели' if self.camera_service.drone_target_locked else ' · свободный полёт'
-            self.camera_status.setText(f'Fly Drone активен{lock_text} · нативная физика {update_hz} Гц')
+            self.camera_status.setText(f'Fly Drone активен{lock_text}')
             return
         if not self.camera_service.following:
-            update_hz = self.camera_service.native_update_hz
-            self.camera_status.setText(f'Камера активна · движение рассчитывается с частотой {update_hz} Гц')
+            self.camera_status.setText('Камера активна')
 
     def _camera_stopped(self) -> None:
         if not hasattr(self, 'camera_start_button'):
@@ -2805,7 +2941,8 @@ class ReplayLabWindow(QMainWindow):
 
     def _camera_hero_slots_ready(self, count: int) -> None:
         if self.camera_service.running and (not self.camera_service.following):
-            self.camera_status.setText(f'Камера активна · быстрых геройских слотов готово: {count}/{len(self.camera_hero_slots)}')
+            configured = sum((combo.currentData() is not None for combo in self.camera_hero_slots))
+            self.camera_status.setText(f'Камера активна · быстрых геройских слотов готово: {count}/{configured}')
 
     def _camera_transition(self, kind_value: str, subject_label: str, active: bool) -> None:
         label = next((action_label for _, action_label, _, kind, _ in CAMERA_TRANSITION_ACTIONS if kind.value == kind_value), kind_value)
@@ -2887,8 +3024,10 @@ class ReplayLabWindow(QMainWindow):
 
     def _camera_error(self, message: str) -> None:
         friendly = {'war3.exe is not running': 'Warcraft III не запущен. Открой реплей и включи Camera Engine ещё раз.'}.get(message, message)
+        LOGGER.error('Camera operation failed: %s', message)
         self.camera_status.setText(friendly)
-        QMessageBox.warning(self, 'Camera Engine', friendly)
+        if is_critical_runtime_error(message):
+            QMessageBox.critical(self, 'Камера', 'Камера не может продолжить работу. Подробности сохранены в диагностическом журнале.')
 
     def _seeker_started(self, operation: str) -> None:
         self.attach_button.setEnabled(False)
@@ -2911,16 +3050,15 @@ class ReplayLabWindow(QMainWindow):
 
     def _seeker_attached(self, result: AttachResult) -> None:
         self._auto_attach_pid = None
-        build_note = ' · совместимая Game.dll' if result.game_dll_match == 'layout-compatible' else ''
-        self.connection_label.setText(f'Подключён · PID {result.pid} · {format_time(result.replay_position_ms)}{build_note}')
+        LOGGER.info('Navigation attached: pid=%s profile=%s match=%s attach_ms=%.1f validation_ms=%.1f scan=%s cache=%s', result.pid, result.build_profile, result.game_dll_match, result.attach_duration_ms, result.binary_validation_ms, result.replay_scan_strategy, result.validation_cache_hit)
+        self.connection_label.setText(f'Подключён · {format_time(result.replay_position_ms)}')
         self.connection_label.setObjectName('connectionOnline')
         self.connection_label.style().unpolish(self.connection_label)
         self.connection_label.style().polish(self.connection_label)
         self.attach_button.setVisible(False)
         self.seek_button.setEnabled(self.report is not None)
-        self.seek_status.setText(f"{result.build_profile or 'Warcraft III 1.26a'} · подключено")
-        cache_note = ' · cache' if result.validation_cache_hit or result.replay_scan_strategy in {'open-session', 'session-cache'} else ''
-        self.seek_metrics_label.setText(f"Instant Seek готов за {result.attach_duration_ms:.0f} мс{cache_note} · replay block: {result.replay_scan_strategy or 'validated'}")
+        self.seek_status.setText('Навигация по реплею готова')
+        self.seek_metrics_label.setText('Можно переходить к любому таймингу.')
         QTimer.singleShot(250, lambda process_id=result.pid: self._auto_start_ability_hud(process_id))
         target = post_attach_seek_target(self._backward_launch_armed, self._pending_backward_seek)
         if target is not None:
@@ -2933,25 +3071,17 @@ class ReplayLabWindow(QMainWindow):
         game_start = self.report.game_start_ms if self.report else 0
         game_position = max(progress.current_replay_time_ms - (game_start or 0), 0)
         self.timeline.setValue(min(game_position, self.timeline.maximum()))
-        stage = {'starting': 'запуск', 'cruise': 'разгон', 'braking': 'торможение'}.get(progress.stage, progress.stage)
-        details = [f'Сейчас {format_time(game_position, millis=True)}', stage, f'лимит {format_seek_speed(progress.speed_value)}']
+        details = [f'Сейчас {format_time(game_position, millis=True)}']
         if progress.effective_speed > 0.01:
-            details.append(f'реально {progress.effective_speed:.1f}x')
+            details.append(f'{progress.effective_speed:.1f}x')
         if progress.eta_seconds is not None:
-            details.append(f'ETA {progress.eta_seconds:.1f} с')
+            details.append(f'осталось {progress.eta_seconds:.1f} с')
         self.seek_status.setText(' · '.join(details))
-        metrics = [f'команда {progress.command_latency_ms:.1f} мс']
-        if progress.first_advance_ms is not None:
-            metrics.append(f'первый тик {progress.first_advance_ms:.0f} мс')
-        if progress.process_cpu_percent is not None:
-            metrics.append(f'CPU {progress.process_cpu_percent:.0f}% одного ядра')
-        self.seek_metrics_label.setText(' · '.join(metrics))
+        self.seek_metrics_label.setText('Переход выполняется…')
 
     def _seek_metrics(self, metrics: SeekMetrics) -> None:
-        cpu = f' · CPU {metrics.process_cpu_percent:.0f}% одного ядра' if metrics.process_cpu_percent is not None else ''
-        qos = ' · HighQoS' if metrics.high_qos_applied else ''
-        first_tick = f'{metrics.first_advance_ms:.0f} мс' if metrics.first_advance_ms is not None else '—'
-        self.seek_metrics_label.setText(f'{metrics.wall_duration_ms / 1000.0:.2f} с · {metrics.effective_speed:.1f}x · первый тик {first_tick} · перелёт {metrics.overshoot_ms} мс{cpu}{qos}')
+        LOGGER.info('Navigation metrics: wall_ms=%.1f command_ms=%.1f first_ms=%s speed=%.2f cpu=%s overshoot_ms=%s profile=%s qos=%s', metrics.wall_duration_ms, metrics.command_latency_ms, metrics.first_advance_ms, metrics.effective_speed, metrics.process_cpu_percent, metrics.overshoot_ms, metrics.profile_key, metrics.high_qos_applied)
+        self.seek_metrics_label.setText(f'Переход завершён за {metrics.wall_duration_ms / 1000.0:.2f} с')
 
     def _seek_done(self, replay_position: int) -> None:
         game_start = self.report.game_start_ms if self.report else 0
@@ -2960,6 +3090,7 @@ class ReplayLabWindow(QMainWindow):
         self.seek_status.setText(f'{format_time(game_position, millis=True)} · пауза')
 
     def _seeker_error(self, message: str) -> None:
+        LOGGER.error('Replay navigation failed: %s', message)
         backward_message = 'The target is behind the current replay position. Restart/checkpoint support is not connected yet.'
         if message == backward_message:
             self.seek_status.setText('Точка позади · перезапускаю реплей для перехода назад…')
@@ -2974,9 +3105,11 @@ class ReplayLabWindow(QMainWindow):
         self.seek_status.setText(friendly)
         if not self.seeker.attached:
             self.attach_button.setVisible(False)
-        QMessageBox.warning(self, 'Replay Seeker', friendly)
+        if is_critical_runtime_error(message):
+            QMessageBox.critical(self, 'Навигация по реплею', 'Навигация не может продолжить работу. Подробности сохранены в диагностическом журнале.')
 
     def _seeker_soft_error(self, message: str) -> None:
+        LOGGER.info('Replay navigation is not ready: %s', message)
         if self._auto_attach_pid is not None and time.monotonic() < self._auto_attach_deadline:
             self.seek_status.setText('Warcraft ещё готовит replay · повторяю подключение…')
             if self._pending_backward_seek is None:
@@ -3001,6 +3134,7 @@ class ReplayLabWindow(QMainWindow):
         self.status_label.setText(f'Отчёт сохранён: {filename}')
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._camera_input_poll.stop()
         self.ability_hud_window.set_active(False)
         self.ability_hud_service.shutdown()
         self.camera_service.shutdown()
@@ -3012,6 +3146,7 @@ class ReplayLabWindow(QMainWindow):
         self.setStyleSheet('\n            QMainWindow, QWidget {\n                background: #0d1118;\n                color: #dce4ef;\n                font-family: "Segoe UI";\n                font-size: 10pt;\n            }\n            QLabel#appTitle {\n                color: #f3f6fb;\n                font-size: 17pt;\n                font-weight: 800;\n                letter-spacing: 2px;\n            }\n            QFrame#sidebar, QFrame#statCard, QFrame#playerDetail {\n                background: #141b25;\n                border: 1px solid #222c3a;\n                border-radius: 8px;\n            }\n            QFrame#transitionCard {\n                background: #111923;\n                border: 1px solid #263244;\n                border-radius: 7px;\n            }\n            QFrame#transitionCard QLabel {\n                background: transparent;\n                border: 0;\n            }\n            QLabel#cardTitle {\n                color: #7f8c9e;\n                font-size: 8pt;\n                font-weight: 700;\n            }\n            QLabel#cardValue {\n                color: #f3f6fb;\n                font-size: 13pt;\n                font-weight: 700;\n            }\n            QLabel#heroPortrait {\n                background: #0b1017;\n                border: 2px solid #33465e;\n                border-radius: 8px;\n                color: #67778b;\n                font-size: 22pt;\n                font-weight: 800;\n            }\n            QLabel#playerName {\n                color: #f4f7fb;\n                font-size: 15pt;\n                font-weight: 800;\n            }\n            QLabel#playerHero {\n                color: #55a7ff;\n                font-size: 10pt;\n                font-weight: 650;\n            }\n            QLabel#playerMeta { color: #96a5b8; }\n            QLabel#itemSlot {\n                background: #0a0f16;\n                border: 1px solid #334154;\n                border-radius: 6px;\n                color: #718097;\n                font-family: "Cascadia Mono";\n                font-size: 8pt;\n                font-weight: 700;\n            }\n            QLineEdit, QDoubleSpinBox {\n                background: #0a0f16;\n                border: 1px solid #334154;\n                border-radius: 6px;\n                color: #f1f5fb;\n                padding: 7px 9px;\n                font-family: "Cascadia Mono";\n                font-size: 10pt;\n                font-weight: 700;\n            }\n            QLineEdit:focus, QDoubleSpinBox:focus {\n                border-color: #2f7ef8;\n            }\n            QPushButton {\n                background: #1d6ff2;\n                border: 0;\n                border-radius: 6px;\n                padding: 8px 14px;\n                color: white;\n                font-weight: 600;\n            }\n            QPushButton:hover { background: #3181fa; }\n            QPushButton:pressed { background: #165dcf; }\n            QPushButton:disabled {\n                background: #252d39;\n                color: #687486;\n            }\n            QListWidget, QTableWidget {\n                background: #111720;\n                alternate-background-color: #151d28;\n                border: 1px solid #222c3a;\n                border-radius: 6px;\n                gridline-color: #202a37;\n                selection-background-color: #204d86;\n                selection-color: white;\n            }\n            QListWidget::item {\n                padding: 9px 7px;\n                border-radius: 4px;\n            }\n            QListWidget::item:selected { background: #204d86; }\n            QHeaderView::section {\n                background: #18212d;\n                color: #94a2b5;\n                border: 0;\n                border-right: 1px solid #273242;\n                padding: 8px;\n                font-weight: 700;\n            }\n            QTabWidget::pane {\n                border: 1px solid #222c3a;\n                border-radius: 7px;\n                background: #10161f;\n            }\n            QTabBar::tab {\n                background: #141b25;\n                color: #8492a6;\n                padding: 10px 18px;\n                margin-right: 2px;\n                border-top-left-radius: 6px;\n                border-top-right-radius: 6px;\n            }\n            QTabBar::tab:selected {\n                background: #1a2635;\n                color: #f0f5fb;\n            }\n            QLabel#hint, QLabel#statusLabel { color: #8492a6; }\n            QLabel#timeLabel {\n                color: #f0f5fb;\n                font-family: "Cascadia Mono";\n                font-weight: 700;\n            }\n            QLabel#connectionOffline { color: #ff8a78; }\n            QLabel#connectionOnline { color: #63d99a; }\n            QSlider::groove:horizontal {\n                height: 6px;\n                background: #2a3544;\n                border-radius: 3px;\n            }\n            QSlider::sub-page:horizontal {\n                background: #347fe8;\n                border-radius: 3px;\n            }\n            QSlider::handle:horizontal {\n                background: #f4f7fb;\n                border: 3px solid #347fe8;\n                width: 14px;\n                margin: -7px 0;\n                border-radius: 10px;\n            }\n            QSplitter::handle { background: transparent; width: 10px; }\n            QScrollBar:vertical, QScrollBar:horizontal {\n                background: #10161f;\n                border: 0;\n            }\n            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {\n                background: #344154;\n                border-radius: 4px;\n                min-height: 24px;\n                min-width: 24px;\n            }\n            ')
 
 def main() -> int:
+    log_path = configure_diagnostics()
     self_test = '--self-test' in sys.argv
     replay_argument: Path | None = None
     if '--self-test-replay' in sys.argv:
@@ -3021,6 +3156,12 @@ def main() -> int:
     app = QApplication.instance() or QApplication([sys.argv[0]])
     app.setApplicationName(APP_NAME)
     app.setOrganizationName('ReplayLab')
+    if sys.platform == 'win32':
+        windows = sys.getwindowsversion()
+        LOGGER.info('Windows version detected: %s.%s build %s; log=%s', windows.major, windows.minor, windows.build, log_path)
+        if not supported_windows_version(windows.major):
+            QMessageBox.critical(None, 'ReplayLab', 'ReplayLab поддерживает Windows 10 и Windows 11.')
+            return 27
     icon_path = app_icon_path()
     if icon_path is not None:
         app.setWindowIcon(QIcon(str(icon_path)))
@@ -3072,9 +3213,9 @@ def main() -> int:
             if hero_count <= 0 or not window._replay_moments or window.chat_table.rowCount() <= 0:
                 window.close()
                 return 24
-            for hero_slot in window.camera_hero_slots:
+            for slot_index, hero_slot in enumerate(window.camera_hero_slots):
                 data = hero_slot.currentData()
-                if hero_slot.count() != hero_count or not isinstance(data, (tuple, list)) or len(data) != 3:
+                if hero_slot.count() != hero_count + 1 or (slot_index < hero_count and (not isinstance(data, (tuple, list)) or len(data) != 3)) or (slot_index >= hero_count and data is not None):
                     window.close()
                     return 25
             exercise_tabs()

@@ -1,10 +1,13 @@
 from __future__ import annotations
 import json
+import hashlib
+import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-PROFILE_PATH = Path(__file__).with_name('profiles') / 'iccup_dota_500_abilities.json'
+PROFILE_DIRECTORY = Path(__file__).with_name('profiles')
+PROFILE_PATH = PROFILE_DIRECTORY / 'iccup_dota_500_abilities.json'
 SHA256_RE = re.compile('^[0-9a-f]{64}$')
 
 @dataclass(frozen=True)
@@ -25,10 +28,9 @@ class AbilityProfile:
     source: str
     abilities: dict[str, AbilityDefinition]
 
-@lru_cache(maxsize=1)
-def load_ability_profile() -> AbilityProfile | None:
+def _load_ability_profile(path: Path) -> AbilityProfile | None:
     try:
-        payload = json.loads(PROFILE_PATH.read_text(encoding='utf-8'))
+        payload = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
         return None
     profile_id = payload.get('profile_id')
@@ -55,20 +57,52 @@ def load_ability_profile() -> AbilityProfile | None:
         return None
     return AbilityProfile(profile_id=profile_id, schema_version=1, map_name=map_name, map_sha256=map_sha256, source=source, abilities=result)
 
+@lru_cache(maxsize=1)
+def load_ability_profiles() -> tuple[AbilityProfile, ...]:
+    profiles: list[AbilityProfile] = []
+    paths = sorted(PROFILE_DIRECTORY.glob('*_abilities.json'))
+    local_app_data = os.environ.get('LOCALAPPDATA')
+    if local_app_data:
+        paths.extend(sorted((Path(local_app_data) / 'ReplayLab' / 'profiles').glob('*.json')))
+    seen_ids: set[str] = set()
+    for path in paths:
+        profile = _load_ability_profile(path)
+        if profile is not None and profile.profile_id not in seen_ids:
+            seen_ids.add(profile.profile_id)
+            profiles.append(profile)
+    return tuple(profiles)
+
+@lru_cache(maxsize=1)
+def load_ability_profile() -> AbilityProfile | None:
+    profiles = load_ability_profiles()
+    return profiles[0] if profiles else None
+
 def get_ability_profile(map_path: str) -> AbilityProfile | None:
-    profile = load_ability_profile()
-    if profile is None:
-        return None
     filename = map_path.replace('/', '\\').rsplit('\\', 1)[-1]
-    if filename.casefold() != profile.map_name.casefold():
-        return None
-    return profile
+    profiles = load_ability_profiles()
+    for profile in profiles:
+        if filename.casefold() == profile.map_name.casefold():
+            return profile
+    local_path = Path(map_path)
+    if local_path.is_file():
+        digest = hashlib.sha256(local_path.read_bytes()).hexdigest()
+        for profile in profiles:
+            if digest == profile.map_sha256:
+                return profile
+    return None
+
+@lru_cache(maxsize=1)
+def get_ability_catalog() -> dict[str, AbilityDefinition]:
+    result: dict[str, AbilityDefinition] = {}
+    for profile in load_ability_profiles():
+        for rawcode, definition in profile.abilities.items():
+            result.setdefault(rawcode, definition)
+    return result
 
 def supports_skill_timeline(map_path: str) -> bool:
     return get_ability_profile(map_path) is not None
 
 def get_ability_definition(rawcode: str | None) -> AbilityDefinition | None:
-    profile = load_ability_profile()
-    if rawcode is None or profile is None:
+    if rawcode is None:
         return None
-    return profile.abilities.get(rawcode)
+    return get_ability_catalog().get(rawcode)

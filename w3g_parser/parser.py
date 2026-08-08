@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 from .actions import decode_actions
-from .ability_profile import get_ability_profile
+from .ability_profile import get_ability_catalog, get_ability_profile
 from .dota_profile import DOTA_HERO_NAMES
 from .item_profile import get_item_definition
 REPLAY_SIGNATURE = b'Warcraft III recorded game\x1a\x00'
@@ -199,6 +199,20 @@ class RecordedSkillLearnAction:
     ability_rawcode: str
 
 @dataclass(frozen=True)
+class RecordedAbilityOrder:
+    replay_time_ms: int
+    network_player_id: int
+    order_id: int
+
+@dataclass(frozen=True)
+class InvokerInvokeEvent:
+    replay_time_ms: int
+    game_time_ms: int
+    network_player_id: int
+    player_slot: int
+    spell_rawcodes: tuple[str, ...]
+
+@dataclass(frozen=True)
 class SkillLearnEvent:
     replay_time_ms: int
     game_time_ms: int
@@ -303,6 +317,7 @@ class ReplayReport:
     item_timings: list[ItemTiming] = field(default_factory=list)
     item_orders: list[ItemOrder] = field(default_factory=list)
     skill_learns: list[SkillLearnEvent] = field(default_factory=list)
+    invoker_invokes: list[InvokerInvokeEvent] = field(default_factory=list)
     kills: list[KillEvent] = field(default_factory=list)
     multi_kills: list[MultiKillEvent] = field(default_factory=list)
     block_counts: dict[str, int] = field(default_factory=dict)
@@ -314,6 +329,7 @@ class ReplayReport:
     pending_item_orders: list[tuple[int, int, str]] = field(default_factory=list)
     pending_skill_menus: dict[int, int] = field(default_factory=dict)
     pending_skill_learns: list[RecordedSkillLearnAction] = field(default_factory=list)
+    pending_ability_orders: list[RecordedAbilityOrder] = field(default_factory=list)
 
     def to_dict(self, include_packets: bool=False) -> dict[str, Any]:
         result = asdict(self)
@@ -321,6 +337,7 @@ class ReplayReport:
         result.pop('pending_item_orders', None)
         result.pop('pending_skill_menus', None)
         result.pop('pending_skill_learns', None)
+        result.pop('pending_ability_orders', None)
         if not include_packets:
             result['command_packet_count'] = len(self.command_packets)
             result.pop('command_packets', None)
@@ -553,6 +570,8 @@ def _parse_command_data(payload: bytes, time_ms: int, report: ReplayReport) -> N
                 report.apm_action_times.setdefault(player_id, []).append(time_ms)
             if action.ability_rawcode and action.ability_rawcode.startswith('I'):
                 report.pending_item_orders.append((time_ms, player_id, action.ability_rawcode))
+            if action.ability_order_id is not None:
+                report.pending_ability_orders.append(RecordedAbilityOrder(replay_time_ms=time_ms, network_player_id=player_id, order_id=action.ability_order_id))
             if action.action_id == 102:
                 report.pending_skill_menus[player_id] = time_ms
             elif player_id in report.pending_skill_menus:
@@ -621,6 +640,10 @@ MULTI_KILL_WINDOW_MS = 18000
 MULTI_KILL_LABELS = {2: 'Double Kill', 3: 'Triple Kill', 4: 'Ultra Kill'}
 FINAL_STAT_KEYS = {'0': 'level', '1': 'kills', '2': 'deaths', '3': 'creep_kills', '4': 'creep_denies', '5': 'assists', '6': 'final_gold', '7': 'neutral_kills'}
 LIVE_CREEP_STAT_KEYS = {'CSK': 'creep_kills', 'CSD': 'creep_denies', 'NK': 'neutral_kills'}
+INVOKER_HERO_RAWCODE = 'H00U'
+INVOKER_ORB_ORDERS = {852301: 'E', 852302: 'Q', 852303: 'W'}
+INVOKER_INVOKE_ORDER = 852588
+INVOKER_RECIPES = {'EEE': 'A0VG', 'EEQ': 'A0VO', 'EEW': 'A0VN', 'EQQ': 'A0VP', 'EQW': 'A0VM', 'EWW': 'A0VQ', 'QQQ': 'A0VZ', 'QQW': 'A0XL', 'QWW': 'A0VK', 'WWW': 'A0VS'}
 
 def _latest_sync(report: ReplayReport, mission_key: str, key: str) -> GameCacheSync | None:
     matches = [event for event in report.gamecache_syncs if event.cache_name == 'dr.x' and event.mission_key == mission_key and (event.key == key)]
@@ -643,6 +666,88 @@ def _apply_live_creep_stat_fallback(report: ReplayReport, player: DotaPlayer) ->
     if fallback_times:
         player.creep_stats_source = 'periodic-snapshot'
         player.creep_stats_game_time_ms = max(max(fallback_times) - (report.game_start_ms or 0), 0)
+
+def _apply_compact_creep_stat_fallback(report: ReplayReport, player: DotaPlayer) -> None:
+    candidates: list[tuple[GameCacheSync, tuple[int, int, int]]] = []
+    for event in report.gamecache_syncs:
+        if event.cache_name != 'dr.x' or event.mission_key != 'Data' or event.value_i32 != player.slot:
+            continue
+        match = re.fullmatch('CK(\\d+)D(\\d+)N(\\d+)', event.key)
+        if match is None:
+            continue
+        counters = tuple((int(value) for value in match.groups()))
+        if any((value > 100000 for value in counters)):
+            continue
+        candidates.append((event, counters))
+    if not candidates:
+        return
+    event, counters = max(candidates, key=lambda item: item[0].time_ms)
+    changed = False
+    for attribute, value in zip(('creep_kills', 'creep_denies', 'neutral_kills'), counters):
+        if getattr(player, attribute) is None:
+            setattr(player, attribute, value)
+            changed = True
+    if changed and player.creep_stats_source is None:
+        player.creep_stats_source = 'leave-summary'
+        player.creep_stats_game_time_ms = max(event.time_ms - (report.game_start_ms or 0), 0)
+
+def _apply_short_replay_stat_fallbacks(report: ReplayReport) -> None:
+    if report.kills:
+        kill_counts = Counter((event.killer_id for event in report.kills))
+        death_counts = Counter((event.victim_id for event in report.kills))
+        for player in report.dota_players:
+            if player.kills is None:
+                player.kills = kill_counts[player.slot]
+            if player.deaths is None:
+                player.deaths = death_counts[player.slot]
+    levels: dict[int, int] = {}
+    for event in report.gamecache_syncs:
+        if event.cache_name != 'dr.x' or event.mission_key != 'Data':
+            continue
+        match = re.fullmatch('Level(\\d+)', event.key)
+        if match is None or not 0 <= event.value_i32 <= 15:
+            continue
+        level = int(match.group(1))
+        if 1 <= level <= 30:
+            levels[event.value_i32] = max(level, levels.get(event.value_i32, 0))
+    for player in report.dota_players:
+        if player.level is None and player.slot in levels:
+            player.level = levels[player.slot]
+
+def _derive_invoker_invokes(report: ReplayReport, game_start_ms: int) -> None:
+    invokers = {player.network_player_id: player for player in report.dota_players if player.hero_rawcode == INVOKER_HERO_RAWCODE}
+    if not invokers:
+        return
+    orders_by_player: dict[int, list[RecordedAbilityOrder]] = defaultdict(list)
+    for order in report.pending_ability_orders:
+        if order.network_player_id in invokers:
+            orders_by_player[order.network_player_id].append(order)
+    for network_player_id, player in invokers.items():
+        orbs: list[str] = []
+        active: list[str] = []
+        for order in sorted(orders_by_player[network_player_id], key=lambda event: event.replay_time_ms):
+            orb = INVOKER_ORB_ORDERS.get(order.order_id)
+            if orb is not None:
+                orbs.append(orb)
+                del orbs[:-3]
+                continue
+            if order.order_id != INVOKER_INVOKE_ORDER or len(orbs) != 3:
+                continue
+            spell = INVOKER_RECIPES.get(''.join(sorted(orbs)))
+            if spell is None:
+                continue
+            active = [spell, *(item for item in active if item != spell)][:2]
+            report.invoker_invokes.append(InvokerInvokeEvent(replay_time_ms=order.replay_time_ms, game_time_ms=order.replay_time_ms - game_start_ms, network_player_id=network_player_id, player_slot=player.slot, spell_rawcodes=tuple(active)))
+    report.invoker_invokes.sort(key=lambda event: event.replay_time_ms)
+
+def invoker_spells_at(events: list[InvokerInvokeEvent], player_slot: int, replay_time_ms: int) -> tuple[str, ...]:
+    result: tuple[str, ...] = ()
+    for event in events:
+        if event.replay_time_ms > replay_time_ms:
+            break
+        if event.player_slot == player_slot:
+            result = event.spell_rawcodes
+    return result
 
 def _peak_apm_60s(times: list[int]) -> tuple[int, int | None]:
     if not times:
@@ -740,20 +845,21 @@ def _derive_dota_events(report: ReplayReport) -> None:
     dota_by_slot = {player.slot: player for player in report.dota_players}
     slot_by_network_id = {player.network_player_id: player.slot for player in report.dota_players}
     ability_profile = get_ability_profile(report.map_path)
-    if ability_profile is not None:
-        learned_levels: Counter[tuple[int, str]] = Counter()
-        for action in report.pending_skill_learns:
-            identity = (action.network_player_id, action.ability_rawcode)
-            new_level = learned_levels[identity] + 1
-            definition = ability_profile.abilities.get(action.ability_rawcode)
-            if definition is not None and new_level > definition.max_levels:
-                report.warnings.append(f'Ignored implausible skill level {action.ability_rawcode}:{new_level} for player {action.network_player_id}')
-                continue
-            learned_levels[identity] = new_level
-            slot = slot_by_network_id.get(action.network_player_id)
-            player = dota_by_slot.get(slot) if slot is not None else None
-            game_time_ms = action.replay_time_ms - game_start
-            report.skill_learns.append(SkillLearnEvent(replay_time_ms=action.replay_time_ms, game_time_ms=game_time_ms, network_player_id=action.network_player_id, player_slot=slot, player_name=player.name if player is not None else network_player_names.get(action.network_player_id, f'Player {action.network_player_id}'), hero_rawcode=player.hero_rawcode if player is not None else None, hero_name=player.hero_name if player is not None else None, ability_rawcode=action.ability_rawcode, ability_name=definition.name if definition is not None else None, ability_max_levels=definition.max_levels if definition is not None else None, new_level=new_level, source='recorded', confidence='strong-derived' if definition is not None else 'recorded-structural', ability_profile_id=ability_profile.profile_id, is_pregame=game_time_ms < 0))
+    ability_catalog = ability_profile.abilities if ability_profile is not None else get_ability_catalog()
+    learned_levels: Counter[tuple[int, str]] = Counter()
+    for action in report.pending_skill_learns:
+        identity = (action.network_player_id, action.ability_rawcode)
+        new_level = learned_levels[identity] + 1
+        definition = ability_catalog.get(action.ability_rawcode)
+        if ability_profile is not None and definition is not None and (new_level > definition.max_levels):
+            report.warnings.append(f'Ignored implausible skill level {action.ability_rawcode}:{new_level} for player {action.network_player_id}')
+            continue
+        learned_levels[identity] = new_level
+        slot = slot_by_network_id.get(action.network_player_id)
+        player = dota_by_slot.get(slot) if slot is not None else None
+        game_time_ms = action.replay_time_ms - game_start
+        report.skill_learns.append(SkillLearnEvent(replay_time_ms=action.replay_time_ms, game_time_ms=game_time_ms, network_player_id=action.network_player_id, player_slot=slot, player_name=player.name if player is not None else network_player_names.get(action.network_player_id, f'Player {action.network_player_id}'), hero_rawcode=player.hero_rawcode if player is not None else None, hero_name=player.hero_name if player is not None else None, ability_rawcode=action.ability_rawcode, ability_name=definition.name if definition is not None else None, ability_max_levels=definition.max_levels if definition is not None else None, new_level=new_level, source='recorded', confidence='strong-derived' if ability_profile is not None and definition is not None else 'catalog-match' if definition is not None else 'recorded-structural', ability_profile_id=ability_profile.profile_id if ability_profile is not None else 'universal-runtime', is_pregame=game_time_ms < 0))
+    _derive_invoker_invokes(report, game_start)
     for dota_player in report.dota_players:
         mission_key = str(dota_player.slot)
         final_creep_times: list[int] = []
@@ -767,6 +873,7 @@ def _derive_dota_events(report: ReplayReport) -> None:
             dota_player.creep_stats_source = 'final'
             dota_player.creep_stats_game_time_ms = max(max(final_creep_times) - game_start, 0)
         _apply_live_creep_stat_fallback(report, dota_player)
+        _apply_compact_creep_stat_fallback(report, dota_player)
         dota_player.final_item_rawcodes = [_rawcode_from_sync(_latest_sync(report, mission_key, f'8_{index}')) for index in range(6)]
         item_definitions = [get_item_definition(rawcode) for rawcode in dota_player.final_item_rawcodes]
         dota_player.final_item_names = [definition.name if definition is not None else None for definition in item_definitions]
@@ -833,6 +940,7 @@ def _derive_dota_events(report: ReplayReport) -> None:
             continue
         label = MULTI_KILL_LABELS.get(count, 'Rampage')
         report.multi_kills.append(MultiKillEvent(replay_time_ms=kill.replay_time_ms, game_time_ms=kill.game_time_ms, killer_id=kill.killer_id, killer_name=kill.killer_name, killer_hero_rawcode=kill.killer_hero_rawcode, killer_hero_name=kill.killer_hero_name, count=count, label=label, victim_ids=[event.victim_id for event in chain], victim_names=[event.victim_name for event in chain], chain_start_game_time_ms=chain[0].game_time_ms))
+    _apply_short_replay_stat_fallbacks(report)
 
 def parse_replay(path: str | Path) -> ReplayReport:
     source = Path(path)

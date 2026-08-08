@@ -6,6 +6,7 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from .diagnostics import get_logger, open_native_stderr
 from .native_runtime import native_binary_candidates
 from .seeker import CameraRuntimeSession, CameraState, SeekBackendError
 HOST_MAGIC = 1296256082
@@ -32,7 +33,8 @@ HOST_SUBJECT = struct.Struct('<2d')
 HOST_DRONE_SETTINGS = struct.Struct('<13d')
 HOST_DRONE_INPUT = struct.Struct('<10dI')
 HOST_DRONE_TURN = struct.Struct('<d')
-HOST_STATUS = {1: 'Native Camera Host отклонил IPC-команду', 2: 'Native Camera Host находится в неподходящем состоянии', 3: 'Native Camera Host не смог открыть процесс Warcraft', 4: 'Native Camera Host не смог прочитать камеру Warcraft', 5: 'Native Camera Host не смог записать состояние камеры Warcraft', 6: 'Native Camera Host обнаружил небезопасное состояние камеры', 7: 'Native Camera Host отклонил небезопасную команду движения', 8: 'Windows не предоставила высокоточный таймер для Camera Engine', 9: 'Warcraft III был закрыт — Camera Engine остановлен', 10: 'Native Camera Host не успевает принимать команды камеры'}
+LOGGER = get_logger('camera')
+HOST_STATUS = {1: 'Камера получила неверную команду', 2: 'Камера ещё не готова', 3: 'Не удалось подключить камеру к Warcraft', 4: 'Не удалось прочитать положение камеры', 5: 'Не удалось изменить положение камеры', 6: 'Камера остановлена из-за некорректного положения', 7: 'Команда движения камеры отклонена', 8: 'Windows не смогла запустить плавную камеру', 9: 'Warcraft III закрыт — камера остановлена', 10: 'Камера не успевает обрабатывать команды'}
 
 def select_camera_update_hz(max_fps: object, refresh_rate: object, *, default: int=120) -> int:
     rates = [int(value) for value in (max_fps, refresh_rate) if isinstance(value, int) and value > 0]
@@ -123,7 +125,7 @@ def find_native_camera_host() -> Path:
     for candidate in _native_host_candidates():
         if candidate.is_file():
             return candidate.resolve()
-    raise SeekBackendError('Нативный Camera Host не найден. Камера не запущена: production-режим без C++-движка не поддерживается.')
+    raise SeekBackendError('Компонент камеры не найден. Переустанови ReplayLab.')
 
 class NativeCameraHost:
 
@@ -134,7 +136,14 @@ class NativeCameraHost:
             raise ValueError('Native update rate must be in range 30..240')
         host = executable.resolve() if executable else find_native_camera_host()
         creation_flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-        self._process = subprocess.Popen([str(host)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0, creationflags=creation_flags)
+        self._stderr_log = open_native_stderr('camera')
+        try:
+            self._process = subprocess.Popen([str(host)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self._stderr_log, bufsize=0, creationflags=creation_flags)
+        except Exception:
+            self._stderr_log.close()
+            LOGGER.exception('Could not start camera host: %s', host)
+            raise
+        LOGGER.info('Camera host started: %s', host)
         self._lock = threading.Lock()
         self._close_lock = threading.Lock()
         self._request_id = 0
@@ -192,6 +201,7 @@ class NativeCameraHost:
             if status and (not accept_error):
                 message = HOST_STATUS.get(status, f'native host error {status}')
                 suffix = f' (WinError {detail})' if detail else ''
+                LOGGER.warning('Camera command failed: command=%s status=%s detail=%s', command, status, detail)
                 raise SeekBackendError(f'{message}{suffix}')
             return CameraState(target_x=pose[0], target_y=pose[1], distance=pose[2], yaw=pose[3], pitch=pose[4], roll=pose[5], z_offset=pose[6])
 
@@ -262,3 +272,7 @@ class NativeCameraHost:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=1.0)
+            stderr_log = getattr(self, '_stderr_log', None)
+            if stderr_log is not None:
+                stderr_log.close()
+            LOGGER.info('Camera host stopped: exit_code=%s', process.returncode)

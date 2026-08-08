@@ -4,6 +4,7 @@ import ctypes
 import math
 import os
 import threading
+import time
 from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Mapping, Sequence
@@ -12,11 +13,16 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QWidget
 from .ability_profile import AbilityDefinition
 from .assets import ability_icon_path, command_icon_path
+from .diagnostics import get_logger
 from .native_telemetry import LiveAbilityState, NativeTelemetryHost, TelemetryHostError, TelemetrySnapshot
 from .seeker import SeekBackendError
 HUD_POLL_SECONDS = 0.05
+POINTER_SELECTION_SETTLE_SECONDS = 0.075
 TRANSIENT_TELEMETRY_STATUSES = frozenset({5, 6})
 COMMAND_CARD_COLUMNS = 4
+COMMAND_CARD_ROWS = 3
+COMMAND_CARD_CELLS = COMMAND_CARD_COLUMNS * COMMAND_CARD_ROWS
+LOGGER = get_logger('skills_hud')
 
 class AbilityTelemetrySignals(QObject):
     operation_started = Signal()
@@ -35,7 +41,7 @@ class AbilityTelemetryService(QObject):
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._future: concurrent.futures.Future[None] | None = None
-        self._pending_target: tuple[int, str] | None = None
+        self._pending_target: tuple[int, str, int] | None = None
         self._process_id = 0
         self._running = False
 
@@ -49,7 +55,7 @@ class AbilityTelemetryService(QObject):
         with self._lock:
             return self._future is not None and (not self._future.done())
 
-    def start(self, player_slot: int, hero_rawcode: str, *, process_id: int=0) -> None:
+    def start(self, player_slot: int, hero_rawcode: str, *, process_id: int=0, targets: Sequence[tuple[int, str]]=()) -> None:
         with self._lock:
             if self._future is not None and (not self._future.done()):
                 self.signals.failed.emit('Skills HUD уже подключается или работает.')
@@ -58,42 +64,60 @@ class AbilityTelemetryService(QObject):
             self._pending_target = None
             self._process_id = process_id
             self._running = False
-            self._future = self._executor.submit(self._run, player_slot, hero_rawcode, process_id)
+            self._future = self._executor.submit(self._run, player_slot, hero_rawcode, process_id, tuple(targets))
         self.signals.operation_started.emit()
 
-    def set_target(self, player_slot: int, hero_rawcode: str) -> None:
+    def set_target(self, player_slot: int, hero_rawcode: str, hero_address: int=0) -> None:
         with self._lock:
             if self._future is None or self._future.done():
                 raise SeekBackendError('Сначала включи Skills HUD.')
-            self._pending_target = (player_slot, hero_rawcode)
+            self._pending_target = (player_slot, hero_rawcode, hero_address)
 
     def stop(self) -> None:
         self._stop.set()
 
-    def _take_pending_target(self) -> tuple[int, str] | None:
+    def _take_pending_target(self) -> tuple[int, str, int] | None:
         with self._lock:
             target = self._pending_target
             self._pending_target = None
             return target
 
-    def _run(self, player_slot: int, hero_rawcode: str, process_id: int) -> None:
+    def _run(self, player_slot: int, hero_rawcode: str, process_id: int, targets: tuple[tuple[int, str], ...]) -> None:
         host: NativeTelemetryHost | None = None
         try:
             host = NativeTelemetryHost(player_slot, hero_rawcode, process_id=process_id)
-            first = host.snapshot()
+            while True:
+                try:
+                    first = host.snapshot()
+                    break
+                except TelemetryHostError as exc:
+                    if exc.status not in TRANSIENT_TELEMETRY_STATUSES:
+                        raise
+                    self.signals.transient.emit(str(exc))
+                    if self._stop.wait(0.25):
+                        return
             with self._lock:
                 self._running = True
             self.signals.ready.emit(first)
             self.signals.snapshot.emit(first)
+            if targets:
+                prepared = host.prepare_targets(list(targets))
+                self.signals.snapshot.emit(prepared)
             while not self._stop.wait(HUD_POLL_SECONDS):
                 target = self._take_pending_target()
                 try:
-                    snapshot = host.set_target(*target) if target is not None else host.snapshot()
+                    if target is None:
+                        snapshot = host.snapshot()
+                    else:
+                        slot, rawcode, address = target
+                        snapshot = host.set_target(slot, rawcode, address)
                 except TelemetryHostError as exc:
                     if exc.status in TRANSIENT_TELEMETRY_STATUSES:
                         if target is not None:
                             with self._lock:
                                 self._pending_target = target
+                        if exc.snapshot is not None:
+                            self.signals.snapshot.emit(exc.snapshot)
                         self.signals.transient.emit(str(exc))
                         self._stop.wait(0.2)
                         continue
@@ -101,10 +125,12 @@ class AbilityTelemetryService(QObject):
                 self.signals.snapshot.emit(snapshot)
         except (SeekBackendError, OSError, ValueError) as exc:
             if not self._stop.is_set():
+                LOGGER.error('Skills HUD service failed: %s', exc)
                 self.signals.failed.emit(str(exc))
-        except Exception as exc:
+        except Exception:
             if not self._stop.is_set():
-                self.signals.failed.emit(f'Неожиданная ошибка Skills HUD: {exc}')
+                LOGGER.exception('Unexpected Skills HUD service failure')
+                self.signals.failed.emit('Skills HUD остановлен из-за внутренней ошибки.')
         finally:
             if host is not None:
                 host.close()
@@ -129,18 +155,69 @@ class PresentedAbility:
     definition: AbilityDefinition
     state: LiveAbilityState
 
+def _runtime_definition(rawcode: str, state: LiveAbilityState, *, button_x: int | None=None) -> AbilityDefinition:
+    return AbilityDefinition(rawcode=rawcode, name=f'Способность {rawcode}', max_levels=max(state.level, 1), button_x=button_x, button_y=2 if button_x is not None else None)
+
+class AbilityHudSelectionArbiter:
+
+    def __init__(self) -> None:
+        self._observed: tuple[int, int | None, str | None] | None = None
+        self._pinned_player_slot: int | None = None
+        self._pointer_selection_pending = False
+        self._pointer_selection_baseline: tuple[int, int | None, str | None] | None = None
+        self._pointer_selection_not_before = 0.0
+
+    def observe(self, unit_address: int, player_slot: int | None, unit_rawcode: str | None, *, selectable: bool=True, now: float | None=None) -> bool:
+        current = (unit_address, player_slot, unit_rawcode)
+        self._observed = current
+        if self._pinned_player_slot is None:
+            return True
+        if not self._pointer_selection_pending or not selectable:
+            return False
+        timestamp = time.monotonic() if now is None else now
+        changed_away_from_programmatic_target = current != self._pointer_selection_baseline and player_slot != self._pinned_player_slot
+        if not changed_away_from_programmatic_target and timestamp < self._pointer_selection_not_before:
+            return False
+        self._pinned_player_slot = None
+        self._pointer_selection_pending = False
+        self._pointer_selection_baseline = None
+        self._pointer_selection_not_before = 0.0
+        return True
+
+    def pin_explicit_target(self, player_slot: int) -> None:
+        self._pinned_player_slot = player_slot
+        self._pointer_selection_pending = False
+        self._pointer_selection_baseline = None
+        self._pointer_selection_not_before = 0.0
+
+    def begin_pointer_selection(self, *, now: float | None=None) -> None:
+        if self._pinned_player_slot is None:
+            return
+        timestamp = time.monotonic() if now is None else now
+        self._pointer_selection_pending = True
+        self._pointer_selection_baseline = self._observed
+        self._pointer_selection_not_before = timestamp + POINTER_SELECTION_SETTLE_SECONDS
+
+    def clear(self) -> None:
+        self._observed = None
+        self._pinned_player_slot = None
+        self._pointer_selection_pending = False
+        self._pointer_selection_baseline = None
+        self._pointer_selection_not_before = 0.0
+
 def select_presented_abilities(snapshot: TelemetrySnapshot, definitions: Mapping[str, AbilityDefinition], preferred_rawcodes: Sequence[str]) -> tuple[PresentedAbility | None, ...]:
     live = {ability.rawcode: ability for ability in snapshot.abilities}
     preferred = list(dict.fromkeys(preferred_rawcodes))
     preferred_rank = {rawcode: index for index, rawcode in enumerate(preferred)}
     by_slot: dict[int, list[str]] = {slot: [] for slot in range(COMMAND_CARD_COLUMNS)}
-    ordered_rawcodes = (*preferred, *(ability.rawcode for ability in snapshot.abilities))
+    ordered_rawcodes = tuple(preferred) or tuple((ability.rawcode for ability in snapshot.abilities))
     for rawcode in ordered_rawcodes:
         definition = definitions.get(rawcode)
         if definition is None or definition.button_y != 2 or definition.button_x not in by_slot or (rawcode in by_slot[definition.button_x]):
             continue
         by_slot[definition.button_x].append(rawcode)
     result: list[PresentedAbility | None] = []
+    selected_rawcodes: set[str] = set()
     for slot in range(COMMAND_CARD_COLUMNS):
         candidates = by_slot[slot]
         if not candidates:
@@ -153,7 +230,42 @@ def select_presented_abilities(snapshot: TelemetrySnapshot, definitions: Mapping
         rawcode = max(candidates, key=candidate_score)
         state = live.get(rawcode) or LiveAbilityState(rawcode, 0, 0, 0)
         result.append(PresentedAbility(definitions[rawcode], state))
+        selected_rawcodes.add(rawcode)
+    fallback_rawcodes = []
+    for rawcode in dict.fromkeys(ordered_rawcodes):
+        if rawcode in selected_rawcodes:
+            continue
+        definition = definitions.get(rawcode)
+        if definition is None:
+            fallback_rawcodes.append(rawcode)
+            continue
+        if not preferred and (definition.button_y != 2 or definition.button_x not in by_slot):
+            fallback_rawcodes.append(rawcode)
+    for slot, ability in enumerate(result):
+        if ability is not None or not fallback_rawcodes:
+            continue
+        rawcode = fallback_rawcodes.pop(0)
+        state = live.get(rawcode) or LiveAbilityState(rawcode, 0, 0, 0)
+        definition = definitions.get(rawcode) or _runtime_definition(rawcode, state, button_x=slot)
+        result[slot] = PresentedAbility(definition, state)
     return tuple(result)
+
+def select_presented_command_card(snapshot: TelemetrySnapshot, definitions: Mapping[str, AbilityDefinition], preferred_rawcodes: Sequence[str]) -> tuple[PresentedAbility | None, ...]:
+    result: list[PresentedAbility | None] = [None] * COMMAND_CARD_CELLS
+    result[COMMAND_CARD_COLUMNS * 2:] = select_presented_abilities(snapshot, definitions, preferred_rawcodes)
+    live = {ability.rawcode: ability for ability in snapshot.abilities}
+    for dynamic_slot, rawcode in enumerate(snapshot.invoked_spell_rawcodes[:2], start=1):
+        state = live.get(rawcode) or LiveAbilityState(rawcode, 0, 0, 0)
+        definition = definitions.get(rawcode) or _runtime_definition(rawcode, state)
+        result[COMMAND_CARD_COLUMNS + dynamic_slot] = PresentedAbility(definition, state)
+    return tuple(result)
+
+def command_card_cell_at(x: float, y: float, width: float, height: float) -> int | None:
+    if width <= 0 or height <= 0 or (not (0 <= x < width and 0 <= y < height)):
+        return None
+    column = min(int(x * COMMAND_CARD_COLUMNS / width), 3)
+    row = min(int(y * COMMAND_CARD_ROWS / height), 2)
+    return row * COMMAND_CARD_COLUMNS + column
 
 def command_card_bottom_row_geometry(client_width: int, client_height: int) -> tuple[int, int, int, int]:
     x, y, width, height = command_card_geometry(client_width, client_height)
@@ -166,6 +278,72 @@ def command_card_geometry(client_width: int, client_height: int) -> tuple[int, i
     right_margin = max(1, round(client_width * 0.003))
     bottom_margin = max(1, round(client_height * 0.002))
     return (client_width - width - right_margin, client_height - height - bottom_margin, width, height)
+
+class AbilityTooltipWindow(QWidget):
+
+    def __init__(self) -> None:
+        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
+        super().__init__(None, flags)
+        self.setObjectName('abilityHudTooltip')
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setFixedSize(330, 76)
+        self._ability: PresentedAbility | None = None
+        self._native_styles_applied = False
+
+    def show_ability(self, ability: PresentedAbility, anchor_x: int, command_card_top: int, client_left: int, client_top: int, client_width: int) -> None:
+        self._ability = ability
+        maximum_left = client_left + client_width - self.width() - 4
+        left = min(max(anchor_x, client_left + 4), maximum_left)
+        top = max(client_top + 4, command_card_top - self.height() - 8)
+        self.move(left, top)
+        if not self.isVisible():
+            self.show()
+            self._apply_native_styles()
+        self.raise_()
+        self.update()
+
+    def _apply_native_styles(self) -> None:
+        if os.name != 'nt' or self._native_styles_applied:
+            return
+        hwnd = int(self.winId())
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        get_style = user32.GetWindowLongPtrW
+        set_style = user32.SetWindowLongPtrW
+        get_style.argtypes = [wintypes.HWND, ctypes.c_int]
+        get_style.restype = ctypes.c_ssize_t
+        set_style.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+        set_style.restype = ctypes.c_ssize_t
+        ex_style = get_style(hwnd, -20)
+        set_style(hwnd, -20, ex_style | 32 | 134217728 | 128)
+        self._native_styles_applied = True
+
+    def paintEvent(self, _event: object) -> None:
+        ability = self._ability
+        if ability is None:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        panel = QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
+        painter.setPen(QPen(QColor('#b98b32'), 1.5))
+        painter.setBrush(QColor(3, 5, 5, 242))
+        painter.drawRoundedRect(panel, 4.0, 4.0)
+        title_font = QFont('Arial', 12)
+        title_font.setBold(True)
+        painter.setFont(title_font)
+        painter.setPen(QColor('#f2d987'))
+        painter.drawText(QRectF(12.0, 8.0, self.width() - 24.0, 24.0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, ability.definition.name)
+        details = f'Уровень {ability.state.level}/{ability.definition.max_levels}'
+        if ability.state.cooldown_ms > 0:
+            details += f' · КД {AbilityHudWindow._cooldown_label(ability.state.cooldown_ms)}'
+        details += f' · {ability.state.rawcode}'
+        detail_font = QFont('Arial', 10)
+        painter.setFont(detail_font)
+        painter.setPen(QColor('#e7e3d5'))
+        painter.drawText(QRectF(12.0, 38.0, self.width() - 24.0, 24.0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, details)
+        painter.end()
 
 class AbilityHudWindow(QWidget):
 
@@ -184,11 +362,12 @@ class AbilityHudWindow(QWidget):
         self._definitions: Mapping[str, AbilityDefinition] = {}
         self._preferred_rawcodes: tuple[str, ...] = ()
         self._snapshot: TelemetrySnapshot | None = None
-        self._abilities: tuple[PresentedAbility | None, ...] = (None, None, None, None)
+        self._abilities: tuple[PresentedAbility | None, ...] = (None,) * COMMAND_CARD_CELLS
         self._pixmap_cache: dict[str, QPixmap | None] = {}
         self._command_pixmap_cache: dict[str, QPixmap | None] = {}
+        self._tooltip = AbilityTooltipWindow()
         self._position_timer = QTimer(self)
-        self._position_timer.setInterval(200)
+        self._position_timer.setInterval(50)
         self._position_timer.timeout.connect(self._sync_geometry)
 
     @property
@@ -200,13 +379,13 @@ class AbilityHudWindow(QWidget):
         self._definitions = definitions
         self._preferred_rawcodes = tuple(preferred_rawcodes)
         if self._snapshot is not None:
-            self._abilities = select_presented_abilities(self._snapshot, self._definitions, self._preferred_rawcodes)
+            self._abilities = select_presented_command_card(self._snapshot, self._definitions, self._preferred_rawcodes)
         self.update()
 
     def update_snapshot(self, snapshot: TelemetrySnapshot) -> None:
         self._snapshot = snapshot
         self._process_id = snapshot.process_id
-        self._abilities = select_presented_abilities(snapshot, self._definitions, self._preferred_rawcodes)
+        self._abilities = select_presented_command_card(snapshot, self._definitions, self._preferred_rawcodes)
         self.update()
 
     def set_active(self, active: bool) -> None:
@@ -216,6 +395,7 @@ class AbilityHudWindow(QWidget):
             self._sync_geometry()
         else:
             self._position_timer.stop()
+            self._tooltip.hide()
             self.hide()
 
     @staticmethod
@@ -252,6 +432,7 @@ class AbilityHudWindow(QWidget):
             return
         client = self._foreground_client_rect(self._process_id)
         if client is None:
+            self._tooltip.hide()
             self.hide()
             return
         left, top, client_width, client_height = client
@@ -261,6 +442,33 @@ class AbilityHudWindow(QWidget):
             self.show()
             self._apply_native_styles()
         self.raise_()
+        self._sync_tooltip(left, top, client_width)
+
+    @staticmethod
+    def _global_cursor_position() -> tuple[int, int] | None:
+        if os.name != 'nt':
+            return None
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+        user32.GetCursorPos.restype = wintypes.BOOL
+        point = wintypes.POINT()
+        if not user32.GetCursorPos(ctypes.byref(point)):
+            return None
+        return (int(point.x), int(point.y))
+
+    def _sync_tooltip(self, client_left: int, client_top: int, client_width: int) -> None:
+        cursor = self._global_cursor_position()
+        if cursor is None:
+            self._tooltip.hide()
+            return
+        cell_index = command_card_cell_at(cursor[0] - self.x(), cursor[1] - self.y(), self.width(), self.height())
+        ability = self._abilities[cell_index] if cell_index is not None else None
+        if ability is None:
+            self._tooltip.hide()
+            return
+        column = cell_index % COMMAND_CARD_COLUMNS
+        anchor_x = round(self.x() + column * self.width() / COMMAND_CARD_COLUMNS)
+        self._tooltip.show_ability(ability, anchor_x, self.y(), client_left, client_top, client_width)
 
     def _apply_native_styles(self) -> None:
         if os.name != 'nt' or self._native_styles_applied:
@@ -309,7 +517,7 @@ class AbilityHudWindow(QWidget):
         row_height = self.height() / 3.0
         painter.fillRect(self.rect(), QColor(1, 2, 2, 248))
         commands: tuple[tuple[str | None, ...], ...] = (('move', 'stop', 'hold', 'attack'), ('patrol', None, None, 'skill_menu'))
-        for row in range(3):
+        for row in range(COMMAND_CARD_ROWS):
             for column in range(COMMAND_CARD_COLUMNS):
                 cell = QRectF(column * cell_width, row * row_height, cell_width, row_height)
                 frame = cell.adjusted(2.0, 2.0, -2.0, -2.0)
@@ -324,19 +532,25 @@ class AbilityHudWindow(QWidget):
                 painter.drawLine(frame.topRight(), frame.bottomRight())
                 icon = QRectF(cell.left() + cell.width() * 0.075, cell.top() + cell.height() * 0.065, cell.width() * 0.85, cell.height() * 0.88)
                 painter.fillRect(icon, QColor(0, 0, 0, 255))
-                if row < 2:
+                ability = self._abilities[row * COMMAND_CARD_COLUMNS + column]
+                if ability is None and row < 2:
                     command = commands[row][column]
                     if command is not None:
                         pixmap = self._command_pixmap(command)
                         if pixmap is not None:
                             painter.drawPixmap(icon, pixmap, QRectF(pixmap.rect()))
                     continue
-                ability = self._abilities[column]
                 if ability is None:
                     continue
                 pixmap = self._ability_pixmap(ability.state.rawcode)
                 if pixmap is not None:
                     painter.drawPixmap(icon, pixmap, QRectF(pixmap.rect()))
+                else:
+                    fallback_font = QFont('Arial', max(8, round(icon.height() * 0.17)))
+                    fallback_font.setBold(True)
+                    painter.setFont(fallback_font)
+                    painter.setPen(QColor('#c9c9c9'))
+                    painter.drawText(icon, Qt.AlignmentFlag.AlignCenter, ability.state.rawcode)
                 if ability.state.level <= 0:
                     painter.fillRect(icon, QColor(0, 0, 0, 125))
                 if ability.state.cooldown_ms > 0:

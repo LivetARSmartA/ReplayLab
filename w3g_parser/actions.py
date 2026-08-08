@@ -11,6 +11,7 @@ class DecodedAction:
     counts_for_apm: bool
     selection_mode: int | None = None
     ability_rawcode: str | None = None
+    ability_order_id: int | None = None
     ability_flags: int | None = None
     ability_object_id_1: int | None = None
     ability_object_id_2: int | None = None
@@ -72,6 +73,7 @@ def decode_actions(payload: bytes) -> tuple[list[DecodedAction], ActionDecodeIss
         action_id = payload[offset]
         selection_mode: int | None = None
         ability_rawcode: str | None = None
+        ability_order_id: int | None = None
         ability_flags: int | None = None
         ability_object_id_1: int | None = None
         ability_object_id_2: int | None = None
@@ -81,6 +83,7 @@ def decode_actions(payload: bytes) -> tuple[list[DecodedAction], ActionDecodeIss
             elif action_id in (16, 17, 18, 19, 20):
                 size = _ability_size(action_id)
                 ability_rawcode = _decode_ability_rawcode(payload, offset)
+                ability_order_id = struct.unpack_from('<I', payload, offset + 3)[0]
                 ability_flags = struct.unpack_from('<H', payload, offset + 1)[0]
                 ability_object_id_1, ability_object_id_2 = struct.unpack_from('<II', payload, offset + 7)
             elif action_id in (22, 23):
@@ -100,6 +103,6 @@ def decode_actions(payload: bytes) -> tuple[list[DecodedAction], ActionDecodeIss
             return (actions, ActionDecodeIssue(offset=offset, action_id=action_id, reason=str(exc) or 'unknown action'))
         if size <= 0 or offset + size > len(payload):
             return (actions, ActionDecodeIssue(offset=offset, action_id=action_id, reason=f'action size {size} exceeds packet length'))
-        actions.append(DecodedAction(action_id=action_id, offset=offset, size=size, counts_for_apm=action_id in APM_ACTION_IDS, selection_mode=selection_mode, ability_rawcode=ability_rawcode, ability_flags=ability_flags, ability_object_id_1=ability_object_id_1, ability_object_id_2=ability_object_id_2))
+        actions.append(DecodedAction(action_id=action_id, offset=offset, size=size, counts_for_apm=action_id in APM_ACTION_IDS, selection_mode=selection_mode, ability_rawcode=ability_rawcode, ability_order_id=ability_order_id, ability_flags=ability_flags, ability_object_id_1=ability_object_id_1, ability_object_id_2=ability_object_id_2))
         offset += size
     return (actions, None)

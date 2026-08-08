@@ -8,6 +8,9 @@ from .seeker import SeekBackendError
 CAMERA_CONTROL_KEYS = frozenset({33, 34, 35, 36, 37, 38, 39, 40, 45, 46})
 KEY_CHOICES = tuple(((f'F{number}', 111 + number) for number in range(1, 13))) + tuple(((str(number), 48 + number) for number in range(10))) + tuple(((letter, ord(letter)) for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')) + tuple(((f'Num {number}', 96 + number) for number in range(10))) + (('Num *', 106), ('Num +', 107), ('Num -', 109), ('Num .', 110), ('Num /', 111), ('Space', 32), ('Tab', 9), ('Enter', 13), ('Backspace', 8), ('Esc', 27), ('Insert', 45), ('Delete', 46), ('Home', 36), ('End', 35), ('Page Up', 33), ('Page Down', 34), ('←', 37), ('↑', 38), ('→', 39), ('↓', 40), ('Left Shift', 160), ('Right Shift', 161), ('Left Ctrl', 162), ('Right Ctrl', 163), ('Left Alt', 164), ('Right Alt', 165), (';', 186), ('=', 187), (',', 188), ('-', 189), ('.', 190), ('/', 191), ('`', 192), ('[', 219), ('\\', 220), (']', 221), ("'", 222))
 
+def macro_action_passes_through(action: str | None) -> bool:
+    return bool(action and action.startswith('hero_slot_'))
+
 class KBDLLHOOKSTRUCT(ctypes.Structure):
     _fields_ = [('vkCode', wintypes.DWORD), ('scanCode', wintypes.DWORD), ('flags', wintypes.DWORD), ('time', wintypes.DWORD), ('dwExtraInfo', ctypes.c_size_t)]
 
@@ -22,15 +25,18 @@ class CameraInputRouter:
     WM_SYSKEYDOWN = 260
     WM_SYSKEYUP = 261
     WM_MOUSEMOVE = 512
+    WM_LBUTTONDOWN = 513
     WM_QUIT = 18
 
-    def __init__(self, on_action: Callable[[str], None]) -> None:
+    def __init__(self, on_action: Callable[[str], None], on_selection_intent: Callable[[], None] | None=None) -> None:
         if os.name != 'nt':
             raise SeekBackendError('Camera input router requires Windows')
         self._on_action = on_action
+        self._on_selection_intent = on_selection_intent
         self._bindings: dict[int, str] = {}
         self._action_keys: dict[str, int] = {}
         self._camera_process_id: int | None = None
+        self._hud_process_id: int | None = None
         self._pressed: set[int] = set()
         self._macro_down: set[int] = set()
         self._follow_active = False
@@ -52,6 +58,8 @@ class CameraInputRouter:
         self._user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
         self._user32.GetWindowTextLengthW.restype = ctypes.c_int
         self._user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        self._user32.GetAsyncKeyState.argtypes = [wintypes.INT]
+        self._user32.GetAsyncKeyState.restype = wintypes.SHORT
         self._user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
         self._user32.GetClientRect.restype = wintypes.BOOL
         self._user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
@@ -87,6 +95,11 @@ class CameraInputRouter:
             self._macro_down.clear()
             if process_id is None:
                 self._follow_active = False
+
+    def set_hud_process(self, process_id: int | None) -> None:
+        with self._lock:
+            self._hud_process_id = process_id
+            self._macro_down.clear()
 
     def set_follow_active(self, active: bool) -> None:
         with self._lock:
@@ -127,6 +140,7 @@ class CameraInputRouter:
             self._pressed.clear()
             self._macro_down.clear()
             self._camera_process_id = None
+            self._hud_process_id = None
             self._follow_active = False
 
     def _foreground_context(self) -> tuple[int, bool, int]:
@@ -136,13 +150,35 @@ class CameraInputRouter:
         pid = wintypes.DWORD()
         self._user32.GetWindowThreadProcessId(window, ctypes.byref(pid))
         with self._lock:
-            camera_pid = self._camera_process_id
-        if camera_pid is not None:
-            return (int(window), int(pid.value) == camera_pid, int(pid.value))
+            expected_pid = self._camera_process_id or self._hud_process_id
+        if expected_pid is not None:
+            return (int(window), int(pid.value) == expected_pid, int(pid.value))
         length = self._user32.GetWindowTextLengthW(window)
         title = ctypes.create_unicode_buffer(max(length + 1, 2))
         self._user32.GetWindowTextW(window, title, len(title))
         return (int(window), title.value == 'Warcraft III', int(pid.value))
+
+    def poll_passthrough_actions(self) -> None:
+        _, focused, _ = self._foreground_context()
+        with self._lock:
+            bindings = tuple(((key, action) for key, action in self._bindings.items() if macro_action_passes_through(action)))
+        if not focused:
+            with self._lock:
+                for key, _action in bindings:
+                    self._macro_down.discard(key)
+            return
+        key_states = {key: bool(self._user32.GetAsyncKeyState(key) & 32768) for key, _action in bindings}
+        triggered: list[str] = []
+        with self._lock:
+            for key, action in bindings:
+                if key_states[key]:
+                    if key not in self._macro_down:
+                        self._macro_down.add(key)
+                        triggered.append(action)
+                else:
+                    self._macro_down.discard(key)
+        for action in triggered:
+            self._on_action(action)
 
     def _hook_callback(self, code: int, message: int, data: int) -> int:
         if code >= 0:
@@ -152,8 +188,8 @@ class CameraInputRouter:
             with self._lock:
                 action = self._bindings.get(key)
                 camera_active = self._camera_process_id is not None
-            intercepted = action is not None or (camera_active and key in CAMERA_CONTROL_KEYS)
-            if intercepted:
+            handled = action is not None or (camera_active and key in CAMERA_CONTROL_KEYS)
+            if handled:
                 if message in (self.WM_KEYDOWN, self.WM_SYSKEYDOWN):
                     first_press = False
                     if focused:
@@ -170,7 +206,7 @@ class CameraInputRouter:
                     with self._lock:
                         self._pressed.discard(key)
                         self._macro_down.discard(key)
-                if focused:
+                if focused and (not macro_action_passes_through(action)):
                     return 1
             elif not focused:
                 with self._lock:
@@ -179,6 +215,10 @@ class CameraInputRouter:
         return int(self._user32.CallNextHookEx(self._hook or 0, code, message, data))
 
     def _mouse_hook_callback(self, code: int, message: int, data: int) -> int:
+        if code >= 0 and message == self.WM_LBUTTONDOWN:
+            _, focused, _ = self._foreground_context()
+            if focused and self._on_selection_intent is not None:
+                self._on_selection_intent()
         if code >= 0 and message == self.WM_MOUSEMOVE:
             with self._lock:
                 follow_active = self._follow_active
