@@ -1,5 +1,9 @@
 # ReplayLab
 
+> **Repository role:** PUBLIC stable distribution channel. Newer private
+> development versions are not public releases until explicitly promoted under
+> [`RELEASE_POLICY.md`](RELEASE_POLICY.md).
+
 ReplayLab — настольная лаборатория для разбора и просмотра replay Warcraft III
 1.26a. Приложение читает `.w3g`, строит статистику и таймлайн матча, запускает
 replay в Warcraft, поддерживает Instant Seek, Skills HUD и операторскую камеру.
