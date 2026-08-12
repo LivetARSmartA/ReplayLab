@@ -1,11 +1,11 @@
 from __future__ import annotations
 import json
-import hashlib
 import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from .native_runtime_host import NativeRuntimeError, native_file_sha256
 PROFILE_DIRECTORY = Path(__file__).with_name('profiles')
 PROFILE_PATH = PROFILE_DIRECTORY / 'iccup_dota_500_abilities.json'
 SHA256_RE = re.compile('^[0-9a-f]{64}$')
@@ -85,7 +85,10 @@ def get_ability_profile(map_path: str) -> AbilityProfile | None:
             return profile
     local_path = Path(map_path)
     if local_path.is_file():
-        digest = hashlib.sha256(local_path.read_bytes()).hexdigest()
+        try:
+            digest = native_file_sha256(local_path).lower()
+        except NativeRuntimeError:
+            return None
         for profile in profiles:
             if digest == profile.map_sha256:
                 return profile

@@ -7,9 +7,9 @@ import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable
-from PySide6.QtCore import QAbstractAnimation, QEasingCurve, Property, QPropertyAnimation, QRectF, QSettings, QSize, QTimer, Qt, QThreadPool, QRunnable, Signal, Slot, QObject
-from PySide6.QtGui import QColor, QCloseEvent, QIcon, QLinearGradient, QPainter, QPen, QPixmap, QRadialGradient, QWheelEvent
-from PySide6.QtWidgets import QApplication, QAbstractScrollArea, QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget, QListWidgetItem, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QScrollBar, QSlider, QSpinBox, QSplitter, QStyle, QStyleOptionSlider, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtCore import QAbstractAnimation, QEasingCurve, Property, QPointF, QPropertyAnimation, QRectF, QSettings, QSize, QTimer, Qt, QThreadPool, QRunnable, Signal, Slot, QObject
+from PySide6.QtGui import QColor, QCloseEvent, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient, QWheelEvent
+from PySide6.QtWidgets import QApplication, QAbstractScrollArea, QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QListWidget, QListWidgetItem, QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton, QScrollArea, QScrollBar, QSlider, QSpinBox, QSplitter, QStyle, QStyleOptionSlider, QTabWidget, QTableWidget, QTableWidgetItem, QToolTip, QVBoxLayout, QWidget
 from .assets import app_icon_path, compact_build_id, hero_icon_path, item_icon_path, release_build_id
 from .ability_hud import AbilityHudSelectionArbiter, AbilityHudWindow, AbilityTelemetryService
 from .ability_profile import AbilityDefinition, get_ability_catalog, get_ability_profile
@@ -18,11 +18,15 @@ from .camera_input import CameraInputRouter, KEY_CHOICES
 from .camera_modes import CAMERA_TRANSITION_PRESETS, DEFAULT_CUSTOM_TRANSITION, CameraTransitionKind, CameraTransitionSpec, tune_transition
 from .dota_profile import DOTA_HERO_NAMES
 from .diagnostics import configure_diagnostics, get_logger, is_critical_runtime_error, supported_windows_version
+from .deep_analysis import DeepAnalysisBundle
+from .deep_analysis_runtime import DeepAnalysisCoordinator
+from .deep_analysis_sidecar import DeepAnalysisCache, bundle_from_json, sha256_file
 from .launcher import WarcraftLaunchError, WarcraftReplayLauncher, likely_iccup_launchers, likely_warcraft_executables
 from .moments import ReplayMoment, ReplayMomentKind, build_replay_moments
-from .native_camera import DroneSettings
+from .native_camera import DroneSettings, NativeCameraHost
+from .native_replay_transport import NativeReplayTransport
 from .parser import ChatMessage, DotaPlayer, ItemTiming, ReplayReport, invoker_spells_at, parse_replay
-from .seeker import AttachResult, SEEK_PROFILES, SeekBackendError, SeekCancelled, SeekMetrics, SeekProfile, SeekProgress, Warcraft126MemoryBackend
+from .seeker import AttachResult, SEEK_PROFILES, SeekBackendError, SeekCancelled, SeekMetrics, SeekProfile, SeekProgress
 from .settings import discover_replays, forget_failed_replay, recover_persistent_settings
 LOGGER = get_logger('ui')
 APP_NAME = 'Warcraft III Replay Lab'
@@ -58,6 +62,20 @@ def apply_dark_windows_title_bar(window: QWidget) -> bool:
 CAMERA_CORE_MACRO_ACTIONS = (('toggle_camera', 'Камера: вкл / выкл', 119), ('follow_toggle', 'Follow: вкл / выкл', 118), ('smart_follow_toggle', 'Smart Follow', 116), ('reset_view', 'Вернуть обзор', 120))
 CAMERA_DRONE_MACRO_ACTIONS = (('drone_toggle', 'Fly Drone: вкл / выкл', 66), ('drone_target_lock', 'Drone: захват цели', 78), ('orbit_toggle', 'Orbit: вкл / выкл', 104), ('orbit_reverse', 'Orbit: сменить направление', 98), ('orbit_in', 'Orbit: ближнее кольцо', 103), ('orbit_out', 'Orbit: дальнее кольцо', 105), ('drone_turn_left', 'Drone: поворот влево 90°', 100), ('drone_turn_around', 'Drone: разворот 180°', 101), ('drone_turn_right', 'Drone: поворот вправо 90°', 102), ('drone_height_up', 'Drone: набрать высоту', 97), ('drone_height_down', 'Drone: сбросить высоту', 96))
 DRONE_TURN_DEGREES = {'drone_turn_left': 90.0, 'drone_turn_around': 180.0, 'drone_turn_right': -90.0}
+
+def widget_light_surface_ratio(widget: QWidget, sample_size: int=64) -> float:
+    image = widget.grab().toImage()
+    if image.isNull():
+        return 1.0
+    sampled = image.scaled(sample_size, sample_size, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
+    light = 0
+    total = sample_size * sample_size
+    for y in range(sample_size):
+        for x in range(sample_size):
+            color = sampled.pixelColor(x, y)
+            if color.red() >= 235 and color.green() >= 235 and (color.blue() >= 235):
+                light += 1
+    return light / total
 ORBIT_RING_LABELS = ('ближняя', 'средняя', 'дальняя')
 CAMERA_TRANSITION_ACTIONS = (('transition_dolly_out', 'Dolly Out', 121, CameraTransitionKind.DOLLY_OUT, 'Чистый плавный отъезд назад'), ('transition_crane_up', 'Crane Up', 122, CameraTransitionKind.CRANE_UP, 'Вертикальный операторский подъём'), ('transition_reveal', 'Reveal', 117, CameraTransitionKind.REVEAL, 'Подъём, отдаление и наклон с удержанием героя'), ('transition_push_in', 'Push In', 123, CameraTransitionKind.PUSH_IN, 'Мягкий наезд на текущий кадр'), ('transition_focus_pull', 'Focus Pull', 71, CameraTransitionKind.FOCUS_PULL, 'Отдаление с выбранным героем в центре'), ('transition_custom', 'Свой переход', 84, CameraTransitionKind.CUSTOM, 'Своя дистанция, высота, наклон и длительность'))
 CAMERA_HERO_MACRO_ACTIONS = (('hero_slot_1', 'Герой 1', 49), ('hero_slot_2', 'Герой 2', 50), ('hero_slot_3', 'Герой 3', 51), ('hero_slot_4', 'Герой 4', 52), ('hero_slot_5', 'Герой 5', 53), ('hero_slot_6', 'Герой 6', 54), ('hero_slot_7', 'Герой 7', 55), ('hero_slot_8', 'Герой 8', 56), ('hero_slot_9', 'Герой 9', 57), ('hero_slot_10', 'Герой 10', 48))
@@ -239,6 +257,35 @@ class LaunchTask(QRunnable):
         finally:
             self.signals.finished.emit()
 
+class DeepAnalysisSignals(QObject):
+    ready = Signal(object)
+    progress = Signal(int, str)
+    failed = Signal(str)
+    finished = Signal()
+
+class DeepAnalysisTask(QRunnable):
+
+    def __init__(self, coordinator: DeepAnalysisCoordinator, replay_path: Path, warcraft_path: Path | None, iccup_path: Path | None) -> None:
+        super().__init__()
+        self.coordinator = coordinator
+        self.replay_path = replay_path
+        self.warcraft_path = warcraft_path
+        self.iccup_path = iccup_path
+        self.cancelled = threading.Event()
+        self.signals = DeepAnalysisSignals()
+
+    def cancel(self) -> None:
+        self.cancelled.set()
+
+    def run(self) -> None:
+        try:
+            bundle = self.coordinator.run(self.replay_path, self.warcraft_path, self.iccup_path, self.signals.progress.emit, self.cancelled)
+            self.signals.ready.emit(bundle)
+        except Exception as exc:
+            self.signals.failed.emit(str(exc))
+        finally:
+            self.signals.finished.emit()
+
 class SeekerSignals(QObject):
     operation_started = Signal(str)
     operation_finished = Signal(str)
@@ -258,7 +305,7 @@ class SeekerService(QObject):
         super().__init__()
         self.signals = SeekerSignals()
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix='war3-seeker')
-        self._backend: Warcraft126MemoryBackend | None = None
+        self._transport: NativeReplayTransport | None = None
         self._cancel = threading.Event()
         self._lock = threading.Lock()
         self._busy = False
@@ -306,21 +353,12 @@ class SeekerService(QObject):
         self._cancel.clear()
 
         def job() -> None:
-            if self._backend is not None:
-                reused = self._backend.reuse_attach(pid)
-                if reused is not None:
-                    self.attached = True
-                    self.signals.attached.emit(reused)
-                    return
-            backend = Warcraft126MemoryBackend()
-            try:
-                result = backend.attach(lambda progress: self.signals.scan_progress.emit(int(progress * 100)), self._cancel, pid)
-            except Exception:
-                backend.close()
-                raise
-            if self._backend is not None:
-                self._backend.close()
-            self._backend = backend
+            started_at = time.monotonic()
+            transport = NativeReplayTransport(pid)
+            result = AttachResult(pid=transport.process_id, executable='', game_dll='', replay_block=transport.replay_block, replay_position_ms=transport.replay_position_ms, replay_length_ms=transport.replay_length_ms, attach_duration_ms=(time.monotonic() - started_at) * 1000.0, replay_scan_strategy='native-runtime')
+            if self._transport is not None:
+                self._transport.close()
+            self._transport = transport
             self.attached = True
             self.signals.attached.emit(result)
         self._begin('attach', job, quiet=quiet)
@@ -333,9 +371,9 @@ class SeekerService(QObject):
     def detach(self) -> None:
         if self.busy:
             raise SeekBackendError('Сначала останови текущую перемотку или дождись её окончания.')
-        if self._backend is not None:
-            self._backend.close()
-            self._backend = None
+        if self._transport is not None:
+            self._transport.close()
+            self._transport = None
         self.attached = False
 
     def seek(self, target_replay_time_ms: int, profile: SeekProfile, *, requested_at: float | None=None) -> None:
@@ -345,6 +383,8 @@ class SeekerService(QObject):
                 if self._operation == 'seek':
                     self._pending_seek = (target_replay_time_ms, profile, request_time)
                     self._cancel.set()
+                    if self._transport is not None:
+                        self._transport.cancel()
                     self.signals.seek_replaced.emit(target_replay_time_ms)
                     return
                 self.signals.failed.emit('Дождись подключения к Warcraft или нажми «Стоп».')
@@ -352,12 +392,10 @@ class SeekerService(QObject):
         self._cancel.clear()
 
         def job() -> None:
-            if self._backend is None or not self.attached:
+            if self._transport is None or not self.attached:
                 raise SeekBackendError('Сначала подключись к Warcraft с уже открытым реплеем.')
-            position = self._backend.seek_forward(target_replay_time_ms, self._cancel, self.signals.seek_progress.emit, profile=profile, request_started_at=request_time)
-            metrics = self._backend.last_seek_metrics
-            if metrics is not None:
-                self.signals.seek_metrics.emit(metrics)
+            position, metrics = self._transport.seek(target_replay_time_ms, self._cancel, self.signals.seek_progress.emit, profile=profile, request_started_at=request_time)
+            self.signals.seek_metrics.emit(metrics)
             self.signals.seek_finished.emit(position)
         self._begin('seek', job)
 
@@ -365,17 +403,21 @@ class SeekerService(QObject):
         with self._lock:
             self._pending_seek = None
         self._cancel.set()
+        if self._transport is not None:
+            self._transport.cancel()
 
     def shutdown(self) -> None:
         with self._lock:
             self._pending_seek = None
         self._cancel.set()
+        if self._transport is not None:
+            self._transport.cancel()
 
         def close_backend() -> None:
-            if self._backend is not None:
-                self._backend.close()
-                self._backend = None
-                self.attached = False
+            if self._transport is not None:
+                self._transport.close()
+                self._transport = None
+            self.attached = False
         try:
             self._executor.submit(close_backend)
         except RuntimeError:
@@ -411,7 +453,7 @@ class CameraService(QObject):
         self.signals = CameraSignals()
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix='war3-camera')
         self._prewarm_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix='war3-camera-prewarm')
-        self._backend: Warcraft126MemoryBackend | None = None
+        self._backend: NativeCameraHost | None = None
         self._controller: SmoothCameraController | None = None
         self._cancel = threading.Event()
         self._lock = threading.Lock()
@@ -530,10 +572,9 @@ class CameraService(QObject):
             return
 
         def job() -> None:
-            backend = Warcraft126MemoryBackend()
+            backend = NativeCameraHost()
             try:
-                backend.attach_process()
-                state = backend.attach_camera(self._cancel)
+                state = backend.camera_state()
                 backend.unlock_camera()
                 if self._cancel.is_set():
                     raise SeekCancelled('Camera attachment was cancelled')
@@ -1366,6 +1407,254 @@ class StatCard(QFrame):
         painter.setBrush(QColor(103, 204, 230, 105))
         painter.drawEllipse(QRectF(self.width() - 18, 12, 3, 3))
 
+class RecordedCreepGraph(QWidget):
+    time_selected = Signal(int)
+    METRICS = {'gpm': 'GPM', 'xpm': 'XPM', 'net_worth': 'NET WORTH', 'farm': 'ФАРМ'}
+    SERIES_COLORS = (QColor('#62c9ef'), QColor('#e6ad61'))
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName('recordedCreepGraph')
+        self.setMinimumHeight(285)
+        self.setMouseTracking(True)
+        self._report: ReplayReport | None = None
+        self._deep_analysis: DeepAnalysisBundle | None = None
+        self._metric = 'gpm'
+        self._active_slots: tuple[int, ...] = ()
+        self._duration_ms = 1
+        self._cursor_ms = 0
+        self._plot_rect = QRectF()
+        self._painted_points: list[tuple[QPointF, int, object, int, QColor]] = []
+        self._hovered_point: tuple[int, int] | None = None
+
+    def set_report(self, report: ReplayReport | None) -> None:
+        self._report = report
+        self._duration_ms = max(report.parsed_timeline_ms - (report.game_start_ms or 0) if report is not None else 1, 1)
+        self._cursor_ms = min(self._cursor_ms, self._duration_ms)
+        self._hovered_point = None
+        self.update()
+
+    def set_deep_analysis(self, bundle: DeepAnalysisBundle | None) -> None:
+        self._deep_analysis = bundle
+        if bundle is not None:
+            self._duration_ms = max(bundle.duration_ms, 1)
+        self._cursor_ms = min(self._cursor_ms, self._duration_ms)
+        self._hovered_point = None
+        self.update()
+
+    def set_metric(self, metric: str) -> None:
+        if metric not in self.METRICS or metric == self._metric:
+            return
+        self._metric = metric
+        self._hovered_point = None
+        self.update()
+
+    def set_active_slots(self, slots: list[int] | tuple[int, ...]) -> None:
+        active: list[int] = []
+        for slot in slots:
+            if slot not in active:
+                active.append(slot)
+            if len(active) == len(self.SERIES_COLORS):
+                break
+        self._active_slots = tuple(active)
+        self._hovered_point = None
+        self.update()
+
+    def set_cursor_time(self, game_time_ms: int) -> None:
+        value = min(max(int(game_time_ms), 0), self._duration_ms)
+        if value == self._cursor_ms:
+            return
+        self._cursor_ms = value
+        self.update()
+
+    def active_point_count(self) -> int:
+        return sum((len(self._points(timeline)) for _, timeline in self._active_timelines()))
+
+    def _active_timelines(self) -> list[tuple[int, object]]:
+        timelines: list[tuple[int, object]] = []
+        for slot in self._active_slots:
+            if self._metric == 'farm':
+                timeline = self._report.recorded_creep_timelines.for_player(slot) if self._report is not None and self._report.recorded_creep_timelines is not None else None
+            else:
+                timeline = self._deep_analysis.timeline_for(self._metric, slot) if self._deep_analysis is not None else None
+            if timeline is not None and timeline.is_valid:
+                timelines.append((slot, timeline))
+        return timelines
+
+    @staticmethod
+    def _points(timeline: object) -> tuple[object, ...]:
+        return tuple(getattr(timeline, 'points', getattr(timeline, 'checkpoints', ())))
+
+    def _player_name(self, slot: int) -> str:
+        if self._report is None:
+            return f'SLOT {slot:02d}'
+        player = next((candidate for candidate in self._report.dota_players if candidate.slot == slot), None)
+        return player.name if player is not None else f'SLOT {slot:02d}'
+
+    @staticmethod
+    def _faded(color: QColor, alpha: int) -> QColor:
+        result = QColor(color)
+        result.setAlpha(alpha)
+        return result
+
+    def _value(self, point: object) -> float:
+        if self._metric == 'gpm':
+            return float(point.gpm or 0.0)
+        if self._metric == 'xpm':
+            return float(point.cumulative_xpm or 0.0)
+        if self._metric == 'net_worth':
+            return float(point.net_worth)
+        return float(point.creep_kills + point.creep_denies + point.neutral_kills)
+
+    def _display_value(self, point: object, value: float) -> str:
+        if self._metric in {'gpm', 'xpm'}:
+            return f'{value:.1f}'
+        if self._metric == 'net_worth':
+            return f'{round(value):,}'.replace(',', ' ')
+        return f'{round(value)} · {point.creep_kills}/{point.creep_denies}/{point.neutral_kills}'
+
+    def _provenance(self, point: object) -> str:
+        sources = getattr(point, 'sources', None)
+        if sources:
+            return 'Точная записанная точка · ' + ' + '.join(sources)
+        confidence = str(getattr(point, 'confidence', 'runtime'))
+        source = str(getattr(point, 'source', 'deep-analysis'))
+        label = 'Точное runtime-событие' if confidence.startswith('event-exact') else 'Точный runtime-срез'
+        return f'{label} · {source}'
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        outer = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setPen(QPen(QColor('#1d3c4e'), 1))
+        painter.setBrush(QColor(7, 16, 24, 238))
+        painter.drawRoundedRect(outer, 12, 12)
+        self._plot_rect = outer.adjusted(62, 34, -18, -42)
+        plot = self._plot_rect
+        if plot.width() <= 0 or plot.height() <= 0:
+            return
+        painter.setPen(QPen(QColor('#294457'), 1))
+        painter.setBrush(QColor(8, 20, 29, 220))
+        painter.drawRect(plot)
+        active = self._active_timelines()
+        values = [self._value(point) for _, timeline in active for point in self._points(timeline)]
+        if not values:
+            painter.setPen(QColor('#6f8497'))
+            painter.drawText(plot, Qt.AlignmentFlag.AlignCenter, 'НЕТ ДОКАЗАННЫХ ВРЕМЕННЫХ ТОЧЕК')
+            self._painted_points = []
+            return
+        maximum = max(values)
+        y_step = max(1, math.ceil(max(maximum, 1) * 1.08 / 5))
+        y_maximum = max(y_step * 5, 5)
+        painter.setFont(self.font())
+        for index in range(6):
+            ratio = index / 5.0
+            y = plot.bottom() - ratio * plot.height()
+            painter.setPen(QPen(QColor(50, 77, 96, 92), 1))
+            painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
+            painter.setPen(QColor('#70879a'))
+            painter.drawText(QRectF(2, y - 9, plot.left() - 10, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, str(round(ratio * y_maximum)))
+        for index in range(6):
+            ratio = index / 5.0
+            x = plot.left() + ratio * plot.width()
+            painter.setPen(QPen(QColor(50, 77, 96, 72), 1))
+            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
+            alignment = Qt.AlignmentFlag.AlignHCenter
+            label_rect = QRectF(x - 42, plot.bottom() + 8, 84, 20)
+            if index == 0:
+                alignment = Qt.AlignmentFlag.AlignLeft
+                label_rect.moveLeft(plot.left())
+            elif index == 5:
+                alignment = Qt.AlignmentFlag.AlignRight
+                label_rect.moveRight(plot.right())
+            painter.setPen(QColor('#70879a'))
+            painter.drawText(label_rect, alignment | Qt.AlignmentFlag.AlignVCenter, format_time(round(ratio * self._duration_ms)))
+        painter.setPen(QColor('#6c9bb0'))
+        painter.drawText(QRectF(plot.left(), 7, 190, 20), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f'ДОКАЗАННЫЕ ТОЧКИ / {self.METRICS[self._metric]}')
+        painter.setPen(QColor('#a68a55'))
+        painter.drawText(QRectF(plot.right() - 280, 7, 280, 20), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, 'EVENT-EXACT CHECKPOINTS  /  EARNED GOLD' if self._metric == 'gpm' else 'RUNTIME CHECKPOINTS  /  STRAIGHT GUIDE')
+        cursor_ratio = self._cursor_ms / self._duration_ms
+        cursor_x = plot.left() + cursor_ratio * plot.width()
+        painter.setPen(QPen(QColor(103, 207, 239, 126), 1))
+        painter.drawLine(QPointF(cursor_x, plot.top()), QPointF(cursor_x, plot.bottom()))
+        cursor_label = f'T+{format_time(self._cursor_ms, millis=True)}'
+        cursor_rect = QRectF(cursor_x - 57, plot.top() + 5, 114, 20)
+        if cursor_rect.left() < plot.left():
+            cursor_rect.moveLeft(plot.left() + 4)
+        if cursor_rect.right() > plot.right():
+            cursor_rect.moveRight(plot.right() - 4)
+        painter.setPen(QColor('#8edbf2'))
+        painter.drawText(cursor_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter, cursor_label)
+        self._painted_points = []
+        for series_index, (slot, timeline) in enumerate(active):
+            color = self.SERIES_COLORS[series_index]
+            screen_points: list[tuple[QPointF, object, float]] = []
+            for point in self._points(timeline):
+                x = plot.left() + point.game_time_ms / self._duration_ms * plot.width()
+                value = self._value(point)
+                y = plot.bottom() - value / y_maximum * plot.height()
+                position = QPointF(x, y)
+                screen_points.append((position, point, value))
+                self._painted_points.append((position, slot, point, value, color))
+            if len(screen_points) > 1:
+                path = QPainterPath(screen_points[0][0])
+                for position, _, _ in screen_points[1:]:
+                    path.lineTo(position)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.setPen(QPen(self._faded(color, 38), 5.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                painter.drawPath(path)
+                painter.setPen(QPen(color, 1.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                painter.drawPath(path)
+            last_marker_x = -1000.0
+            for index, (position, point, _) in enumerate(screen_points):
+                hovered = self._hovered_point == (slot, point.game_time_ms)
+                endpoint = index in (0, len(screen_points) - 1)
+                sparse_checkpoint = position.x() - last_marker_x >= 30.0
+                if not (hovered or endpoint or sparse_checkpoint):
+                    continue
+                last_marker_x = position.x()
+                radius = 5.0 if hovered else 3.0 if endpoint else 2.0
+                painter.setPen(QPen(QColor('#08141d'), 1.2))
+                painter.setBrush(color)
+                painter.drawEllipse(position, radius, radius)
+                if hovered:
+                    painter.setPen(QPen(self._faded(color, 70), 1))
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawEllipse(position, 9, 9)
+
+    def _point_near(self, position: QPointF):
+        if not self._painted_points:
+            return None
+        nearest = min(self._painted_points, key=lambda item: (item[0].x() - position.x()) ** 2 + (item[0].y() - position.y()) ** 2)
+        distance = math.hypot(nearest[0].x() - position.x(), nearest[0].y() - position.y())
+        return nearest if distance <= 14 else None
+
+    def mouseMoveEvent(self, event) -> None:
+        nearest = self._point_near(event.position())
+        hovered = None if nearest is None else (nearest[1], nearest[2].game_time_ms)
+        if hovered != self._hovered_point:
+            self._hovered_point = hovered
+            self.update()
+        if nearest is None:
+            QToolTip.hideText()
+        else:
+            _, slot, point, value, _ = nearest
+            QToolTip.showText(event.globalPosition().toPoint(), f'{self._player_name(slot)} · SLOT {slot:02d}\n{format_time(point.game_time_ms)} · {self.METRICS[self._metric].title()}: {self._display_value(point, value)}\n{self._provenance(point)}', self)
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._hovered_point = None
+        QToolTip.hideText()
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self._plot_rect.contains(event.position()):
+            ratio = (event.position().x() - self._plot_rect.left()) / max(self._plot_rect.width(), 1)
+            self.time_selected.emit(round(min(max(ratio, 0.0), 1.0) * self._duration_ms))
+        super().mousePressEvent(event)
+
 class ReplayLabWindow(QMainWindow):
 
     def __init__(self, settings: QSettings | None=None) -> None:
@@ -1389,6 +1678,10 @@ class ReplayLabWindow(QMainWindow):
         self._manual_replay_paths = {Path(str(path)).resolve(strict=False) for path in stored_library or []}
         self.report: ReplayReport | None = None
         self.current_path: Path | None = None
+        self.deep_analysis_cache = DeepAnalysisCache()
+        self.deep_analysis_coordinator = DeepAnalysisCoordinator(self.deep_analysis_cache)
+        self.deep_analysis_bundle: DeepAnalysisBundle | None = None
+        self._deep_analysis_task: QRunnable | None = None
         self._replay_moments: list[ReplayMoment] = []
         self._report_cache: dict[Path, ReplayReport] = {}
         self._table_focus_mode = False
@@ -1651,14 +1944,15 @@ class ReplayLabWindow(QMainWindow):
         compact_height = self.height() < 720
         if hasattr(self, 'player_detail'):
             self.player_detail.setVisible(not compact_height and (not self._table_focus_mode))
+        graph_mode = hasattr(self, 'stats_sections') and self.stats_sections.currentIndex() == 1
         if hasattr(self, 'seek_metrics_label'):
-            self.seek_metrics_label.setVisible(not compact_height)
+            self.seek_metrics_label.setVisible(not compact_height and (not graph_mode))
         if hasattr(self, 'seek_status'):
-            self.seek_status.setVisible(not compact_height)
+            self.seek_status.setVisible(not compact_height and (not graph_mode))
         if hasattr(self, 'timeline'):
             self.timeline.setMinimumHeight(44 if compact_height else 54)
         if hasattr(self, 'temporal_transport'):
-            self.temporal_transport.setMaximumHeight(135 if compact_height else 16777215)
+            self.temporal_transport.setMaximumHeight(122 if graph_mode else 135 if compact_height else 16777215)
 
     def _install_floating_scrollbars(self) -> None:
         for area in self.findChildren(QAbstractScrollArea):
@@ -1792,6 +2086,7 @@ class ReplayLabWindow(QMainWindow):
         layout.addWidget(self.stats_table)
         self.stats_table.itemSelectionChanged.connect(self._stats_selection_changed)
         self.stats_sections.addTab(players_page, 'Игроки')
+        self.stats_sections.addTab(self._build_recorded_graph_page(), 'Графики')
         self.stats_sections.addTab(self._build_chat_page(), 'Чат')
         self.full_table_button = QPushButton('Развернуть таблицу')
         self.full_table_button.setProperty('role', 'ghost')
@@ -1805,6 +2100,97 @@ class ReplayLabWindow(QMainWindow):
         outer_layout.addWidget(self.stats_sections, 1)
         return tab
 
+    def _build_recorded_graph_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 8, 0, 0)
+        layout.setSpacing(10)
+        header = QFrame()
+        header.setObjectName('graphHeader')
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(14, 9, 12, 9)
+        header_layout.setSpacing(10)
+        identity = QVBoxLayout()
+        identity.setSpacing(1)
+        eyebrow = QLabel('DEEP ANALYSIS  /  EVIDENCE FIRST')
+        eyebrow.setObjectName('graphEyebrow')
+        title = QLabel('GPM · XPM · Net Worth')
+        title.setObjectName('graphTitle')
+        identity.addWidget(eyebrow)
+        identity.addWidget(title)
+        header_layout.addLayout(identity)
+        header_layout.addStretch()
+        self.graph_evidence_summary = QLabel('Загрузи реплей, чтобы увидеть записанные точки.')
+        self.graph_evidence_summary.setObjectName('graphEvidenceSummary')
+        self.graph_evidence_summary.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.graph_evidence_summary.setMaximumWidth(430)
+        header_layout.addWidget(self.graph_evidence_summary)
+        self.graph_evidence_badge = QLabel('WAITING FOR ANALYSIS')
+        self.graph_evidence_badge.setObjectName('evidenceBadge')
+        self.graph_evidence_badge.setProperty('evidence', 'pending')
+        self.graph_evidence_badge.setToolTip('Серия появится только после проверки её источника и provenance.')
+        header_layout.addWidget(self.graph_evidence_badge)
+        self.deep_analysis_button = QPushButton('Глубокий анализ')
+        self.deep_analysis_button.setObjectName('deepAnalysisButton')
+        self.deep_analysis_button.setProperty('role', 'analysis')
+        self.deep_analysis_button.setEnabled(False)
+        self.deep_analysis_button.setToolTip('Один ускоренный фоновый проход Warcraft создаёт проверенный sidecar. Повторные открытия берутся из кэша мгновенно.')
+        header_layout.addWidget(self.deep_analysis_button)
+        layout.addWidget(header)
+        self.deep_analysis_rail = QFrame()
+        self.deep_analysis_rail.setObjectName('deepAnalysisRail')
+        analysis_status = QHBoxLayout(self.deep_analysis_rail)
+        analysis_status.setContentsMargins(12, 7, 12, 7)
+        analysis_status.setSpacing(9)
+        self.deep_analysis_state = QLabel('NO REPLAY')
+        self.deep_analysis_state.setObjectName('deepAnalysisState')
+        self.deep_analysis_message = QLabel('Выбери реплей — ReplayLab проверит кэш и профиль захвата.')
+        self.deep_analysis_message.setObjectName('deepAnalysisMessage')
+        self.deep_analysis_progress = QProgressBar()
+        self.deep_analysis_progress.setObjectName('deepAnalysisProgress')
+        self.deep_analysis_progress.setRange(0, 100)
+        self.deep_analysis_progress.setValue(0)
+        self.deep_analysis_progress.setTextVisible(False)
+        self.deep_analysis_progress.setFixedWidth(150)
+        analysis_status.addWidget(self.deep_analysis_state)
+        analysis_status.addWidget(self.deep_analysis_message, 1)
+        analysis_status.addWidget(self.deep_analysis_progress)
+        layout.addWidget(self.deep_analysis_rail)
+        controls = QHBoxLayout()
+        controls.setSpacing(9)
+        primary_label = QLabel('ИГРОК')
+        primary_label.setObjectName('graphControlLabel')
+        controls.addWidget(primary_label)
+        self.graph_primary_player = QComboBox()
+        self.graph_primary_player.setMinimumWidth(190)
+        controls.addWidget(self.graph_primary_player)
+        compare_label = QLabel('СРАВНИТЬ')
+        compare_label.setObjectName('graphControlLabel')
+        controls.addWidget(compare_label)
+        self.graph_compare_player = QComboBox()
+        self.graph_compare_player.setMinimumWidth(190)
+        controls.addWidget(self.graph_compare_player)
+        metric_label = QLabel('МЕТРИКА')
+        metric_label.setObjectName('graphControlLabel')
+        controls.addWidget(metric_label)
+        self.graph_metric = QComboBox()
+        self.graph_metric.addItem('GPM', 'gpm')
+        self.graph_metric.addItem('XPM', 'xpm')
+        self.graph_metric.addItem('Net Worth', 'net_worth')
+        self.graph_metric.insertSeparator(3)
+        self.graph_metric.addItem('Фарм · записанные точки', 'farm')
+        controls.addWidget(self.graph_metric)
+        controls.addStretch()
+        layout.addLayout(controls)
+        self.creep_graph = RecordedCreepGraph()
+        self.creep_graph.time_selected.connect(self._graph_time_selected)
+        layout.addWidget(self.creep_graph, 1)
+        self.graph_primary_player.currentIndexChanged.connect(self._refresh_recorded_graph)
+        self.graph_compare_player.currentIndexChanged.connect(self._refresh_recorded_graph)
+        self.graph_metric.currentIndexChanged.connect(self._refresh_recorded_graph)
+        self.deep_analysis_button.clicked.connect(self._start_deep_analysis)
+        return page
+
     def _product_direction_changed(self, index: int) -> None:
         if self._table_focus_mode and self.tabs.widget(index) is not self.stats_tab:
             self._set_table_focus_mode(False)
@@ -1813,6 +2199,13 @@ class ReplayLabWindow(QMainWindow):
         if self._table_focus_mode and index != 0:
             self._set_table_focus_mode(False)
         self.full_table_button.setVisible(index == 0)
+        self.stats_cards.setVisible(index != 1)
+        if hasattr(self, 'temporal_transport'):
+            compact_height = self.height() < 720
+            graph_mode = index == 1
+            self.seek_status.setVisible(not compact_height and (not graph_mode))
+            self.seek_metrics_label.setVisible(not compact_height and (not graph_mode))
+            self.temporal_transport.setMaximumHeight(122 if graph_mode else 135 if compact_height else 16777215)
 
     def _toggle_table_focus(self) -> None:
         self._set_table_focus_mode(not self._table_focus_mode)
@@ -2074,6 +2467,7 @@ class ReplayLabWindow(QMainWindow):
         self.seek_button.clicked.connect(self.seek_to_target)
         self.cancel_button.clicked.connect(self.seeker.cancel)
         self.timeline.valueChanged.connect(self._temporal_position_changed)
+        self.timeline.valueChanged.connect(self.creep_graph.set_cursor_time)
         self.time_input.returnPressed.connect(self._time_input_submitted)
         return transport
 
@@ -2574,6 +2968,7 @@ class ReplayLabWindow(QMainWindow):
         transition_layout.addStretch()
         self.camera_tool_tabs.addTab(transition_page, 'Операторские шоты')
         drone_page = QWidget()
+        drone_page.setObjectName('cameraDronePage')
         drone_layout = QVBoxLayout(drone_page)
         drone_layout.setContentsMargins(16, 14, 16, 14)
         drone_layout.setSpacing(12)
@@ -2703,12 +3098,13 @@ class ReplayLabWindow(QMainWindow):
         drone_layout.addWidget(drone_help)
         drone_layout.addStretch()
         drone_page.setMinimumHeight(520)
-        drone_scroll = QScrollArea()
-        drone_scroll.setWidgetResizable(True)
-        drone_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        drone_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        drone_scroll.setWidget(drone_page)
-        self.camera_tool_tabs.addTab(drone_scroll, 'Fly Drone')
+        self.camera_drone_scroll = QScrollArea()
+        self.camera_drone_scroll.setObjectName('cameraDroneScroll')
+        self.camera_drone_scroll.setWidgetResizable(True)
+        self.camera_drone_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.camera_drone_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.camera_drone_scroll.setWidget(drone_page)
+        self.camera_tool_tabs.addTab(self.camera_drone_scroll, 'Fly Drone')
         self._normalize_camera_macro_bindings()
         self._sync_camera_macro_bindings()
         self.camera_status = QLabel('Открой реплей в Warcraft и включи независимый Camera Engine.')
@@ -3110,6 +3506,11 @@ class ReplayLabWindow(QMainWindow):
     def load_replay(self, path: Path) -> None:
         self.current_path = path.resolve()
         self.report = None
+        self.deep_analysis_bundle = None
+        self.creep_graph.set_report(None)
+        self.creep_graph.set_deep_analysis(None)
+        self._set_deep_analysis_state('indexing', 'Жду доказательную модель реплея.', 0)
+        self.graph_evidence_summary.setText('Строю доказательную временную модель…')
         self._set_table_focus_mode(False)
         self.full_table_button.setEnabled(False)
         try:
@@ -3147,6 +3548,10 @@ class ReplayLabWindow(QMainWindow):
         forget_failed_replay(self.settings, self.current_path)
         self.temporal_context.set_active(False)
         self.temporal_fingerprint.clear()
+        self.creep_graph.set_report(None)
+        self.creep_graph.set_deep_analysis(None)
+        self._set_deep_analysis_state('error', 'Deep Analysis недоступен: реплей не разобран.', 0)
+        self.graph_evidence_summary.setText('График отключён: реплей не разобран.')
         self.full_table_button.setEnabled(False)
         self.temporal_source_node.set_value('SOURCE FAULT', 'error')
         self.temporal_model_node.set_value('NO MODEL', 'error')
@@ -3183,6 +3588,7 @@ class ReplayLabWindow(QMainWindow):
         self.temporal_context.set_active(True)
         self._set_system_state('REPLAY READY', 'online')
         self._fill_stats(report)
+        self._fill_recorded_graph(report)
         self._fill_camera_players(report)
         self._fill_moments(report, game_duration)
         self.temporal_fingerprint.set_events(self._replay_moments, game_duration)
@@ -3254,6 +3660,145 @@ class ReplayLabWindow(QMainWindow):
             table.selectRow(0)
             self._stats_selection_changed()
 
+    @staticmethod
+    def _graph_player_label(player: DotaPlayer) -> str:
+        hero = player.hero_name or player.hero_rawcode or 'неизвестный герой'
+        return f'{player.name} · {hero} · SLOT {player.slot:02d}'
+
+    def _fill_recorded_graph(self, report: ReplayReport) -> None:
+        self.creep_graph.set_report(report)
+        self.creep_graph.set_deep_analysis(self.deep_analysis_bundle)
+        for combo in (self.graph_primary_player, self.graph_compare_player):
+            combo.blockSignals(True)
+            combo.clear()
+        self.graph_compare_player.addItem('Без сравнения', None)
+        for player in report.dota_players:
+            label = self._graph_player_label(player)
+            self.graph_primary_player.addItem(label, player.slot)
+            self.graph_compare_player.addItem(label, player.slot)
+        primary = report.dota_players[0] if report.dota_players else None
+        compare = next((player for player in report.dota_players if primary is not None and player.slot != primary.slot and (player.side != primary.side)), None) if primary is not None else None
+        if primary is not None:
+            primary_index = self.graph_primary_player.findData(primary.slot)
+            self.graph_primary_player.setCurrentIndex(primary_index)
+        if compare is not None:
+            compare_index = self.graph_compare_player.findData(compare.slot)
+            self.graph_compare_player.setCurrentIndex(compare_index)
+        self.graph_primary_player.blockSignals(False)
+        self.graph_compare_player.blockSignals(False)
+        self._set_deep_analysis_state('ready', 'Кэш откроется сразу; новый C++ capture сам проверит runtime-возможности карты.', 0)
+        self.deep_analysis_button.setEnabled(self.current_path is not None and self.current_path.is_file())
+        self._refresh_recorded_graph()
+
+    def _set_deep_analysis_state(self, state: str, message: str, progress: int) -> None:
+        labels = {'indexing': 'INDEXING', 'ready': 'READY', 'running': 'ANALYZING', 'cached': 'ANALYSIS READY', 'error': 'CAPTURE FAULT', 'cancelling': 'CANCELLING'}
+        self.deep_analysis_state.setText(labels.get(state, state.upper()))
+        self.deep_analysis_state.setProperty('state', state)
+        self.deep_analysis_message.setText(message)
+        self.deep_analysis_progress.setValue(min(max(progress, 0), 100))
+        for widget in (self.deep_analysis_state, self.deep_analysis_rail):
+            widget.setProperty('state', state)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+    def _start_deep_analysis(self) -> None:
+        if isinstance(self._deep_analysis_task, DeepAnalysisTask):
+            self._deep_analysis_task.cancel()
+            self.deep_analysis_button.setEnabled(False)
+            self._set_deep_analysis_state('cancelling', 'Останавливаю capture после текущей безопасной точки.', self.deep_analysis_progress.value())
+            return
+        if self.report is None or self.current_path is None:
+            return
+        configured = self.settings.value('warcraft_executable', '')
+        warcraft = Path(str(configured)) if configured else None
+        if warcraft is not None and (not warcraft.is_file()):
+            warcraft = None
+        iccup = self._iccup_launcher() if self._is_iccup_replay(self.current_path) else None
+        task = DeepAnalysisTask(self.deep_analysis_coordinator, self.current_path, warcraft, iccup)
+        task.signals.progress.connect(self._deep_analysis_progressed)
+        task.signals.ready.connect(self._deep_analysis_ready)
+        task.signals.failed.connect(self._deep_analysis_failed)
+        task.signals.finished.connect(self._deep_analysis_finished)
+        self._deep_analysis_task = task
+        self.deep_analysis_button.setText('Отменить анализ')
+        self._set_deep_analysis_state('running', 'Проверяю кэш; при промахе запускаю ускоренный фоновый replay-pass.', 1)
+        QThreadPool.globalInstance().start(task)
+
+    def _deep_analysis_progressed(self, progress: int, message: str) -> None:
+        self._set_deep_analysis_state('running', message, progress)
+
+    def _deep_analysis_ready(self, bundle: DeepAnalysisBundle) -> None:
+        self.deep_analysis_bundle = bundle
+        self.creep_graph.set_deep_analysis(bundle)
+        metrics = [label for metric, label in (('gpm', 'GPM'), ('xpm', 'XPM'), ('net_worth', 'NET WORTH')) if bundle.valid_slots_for(metric)]
+        self._set_deep_analysis_state('cached', 'Проверены серии: ' + (' · '.join(metrics) or 'нет'), 100)
+        self._refresh_recorded_graph()
+
+    def _deep_analysis_failed(self, message: str) -> None:
+        LOGGER.error('Deep Analysis failed: %s', message)
+        self._set_deep_analysis_state('error', message, 0)
+        self.deep_analysis_message.setToolTip(message)
+
+    def _deep_analysis_finished(self) -> None:
+        self._deep_analysis_task = None
+        self.deep_analysis_button.setText('Глубокий анализ')
+        self.deep_analysis_button.setEnabled(self.report is not None and self.current_path is not None and self.current_path.is_file())
+
+    def _refresh_recorded_graph(self) -> None:
+        if self.report is None:
+            self.creep_graph.set_report(None)
+            return
+        primary = self.graph_primary_player.currentData()
+        compare = self.graph_compare_player.currentData()
+        slots = [int(slot) for slot in (primary, compare) if isinstance(slot, int)]
+        metric = str(self.graph_metric.currentData() or 'gpm')
+        self.creep_graph.set_metric(metric)
+        self.creep_graph.set_active_slots(slots)
+        active_timelines = []
+        for slot in dict.fromkeys(slots):
+            if metric == 'farm':
+                bundle = self.report.recorded_creep_timelines
+                timeline = bundle.for_player(slot) if bundle is not None else None
+            else:
+                timeline = self.deep_analysis_bundle.timeline_for(metric, slot) if self.deep_analysis_bundle is not None else None
+            if timeline is not None and timeline.is_valid:
+                active_timelines.append(timeline)
+        points = sum((len(getattr(timeline, 'points', getattr(timeline, 'checkpoints', ()))) for timeline in active_timelines))
+        gaps = [timeline.max_gap_ms for timeline in active_timelines if getattr(timeline, 'max_gap_ms', None) is not None]
+        sources: set[str] = set()
+        for timeline in active_timelines:
+            timeline_sources = getattr(timeline, 'sources', None)
+            if timeline_sources:
+                sources.update(timeline_sources)
+            else:
+                source = getattr(timeline, 'source', None)
+                if source:
+                    sources.add(str(source))
+        if not active_timelines:
+            summary = 'Запусти глубокий анализ для этой серии.' if metric != 'farm' else 'Для выбранных игроков нет записанных farm-точек.'
+            badge = 'WAITING FOR ANALYSIS' if metric != 'farm' else 'NO CHECKPOINTS'
+            evidence = 'pending'
+        else:
+            summary = f'{len(active_timelines)} серии · {points} точек' + (f' · макс. интервал {format_time(max(gaps))}' if gaps else '')
+            if metric == 'gpm':
+                badge, evidence = ('EVENT EXACT', 'exact')
+            elif metric == 'farm':
+                badge, evidence = ('EXACT CHECKPOINT', 'exact')
+            else:
+                badge, evidence = ('SAMPLED EXACT', 'sampled')
+        self.graph_evidence_summary.setText(summary)
+        self.graph_evidence_badge.setText(badge)
+        self.graph_evidence_badge.setProperty('evidence', evidence)
+        self.graph_evidence_badge.style().unpolish(self.graph_evidence_badge)
+        self.graph_evidence_badge.style().polish(self.graph_evidence_badge)
+        self.graph_evidence_summary.setToolTip('Источники: ' + ' + '.join(sorted(sources)) if sources else 'Нет доказанных источников.')
+
+    def _graph_time_selected(self, game_time_ms: int) -> None:
+        if self.report is None:
+            return
+        self.timeline.setValue(game_time_ms)
+        self.status_label.setText(f'График выбрал координату {format_time(game_time_ms, millis=True)}. Запуск Seeker остаётся отдельным действием.')
+
     def _stats_selection_changed(self) -> None:
         if self.report is None:
             return
@@ -3267,6 +3812,10 @@ class ReplayLabWindow(QMainWindow):
         player = next((candidate for candidate in self.report.dota_players if candidate.slot == slot), None)
         if player is not None:
             self._show_player_detail(player)
+            if hasattr(self, 'graph_primary_player'):
+                graph_index = self.graph_primary_player.findData(player.slot)
+                if graph_index >= 0:
+                    self.graph_primary_player.setCurrentIndex(graph_index)
             if hasattr(self, 'camera_follow_player'):
                 for index in range(self.camera_follow_player.count()):
                     data = self.camera_follow_player.itemData(index)
@@ -4132,7 +4681,7 @@ class ReplayLabWindow(QMainWindow):
         super().closeEvent(event)
 
     def _apply_style(self) -> None:
-        self.setStyleSheet('\n            QMainWindow, QDialog, QMessageBox { background: #080c12; }\n            QWidget {\n                color: #d8e2ed;\n                font-family: "Segoe UI Variable Text", "Segoe UI";\n                font-size: 10pt;\n            }\n            QWidget#obsidianSurface, QWidget#contentArea {\n                background: transparent;\n            }\n            QFrame#topBar {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 rgba(7, 18, 28, 244),\n                    stop: 0.38 rgba(9, 29, 43, 244),\n                    stop: 1 rgba(7, 15, 23, 244)\n                );\n                border: 1px solid #24465a;\n                border-radius: 14px;\n            }\n            QLabel#labMark {\n                background: #06101a;\n                border: 1px solid #28516a;\n                border-radius: 12px;\n                padding: 1px;\n            }\n            QLabel#appTitle {\n                color: #f4f8fc;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 16pt;\n                font-weight: 650;\n                letter-spacing: -0.4px;\n            }\n            QLabel#appSubtitle {\n                color: #60768b;\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 1.5px;\n            }\n            QLabel#labChip {\n                background: rgba(20, 83, 111, 72);\n                border: 1px solid #245267;\n                border-radius: 7px;\n                color: #83cfe8;\n                padding: 5px 9px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 600;\n            }\n            QLabel#systemState {\n                color: #6f8498;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 0.8px;\n            }\n            QLabel#systemState[signal="busy"] { color: #72c2f1; }\n            QLabel#systemState[signal="online"] { color: #75dcb1; }\n            QLabel#systemState[signal="error"] { color: #ef8174; }\n            QFrame#temporalContextBar {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 rgba(8, 27, 40, 244),\n                    stop: 0.48 rgba(8, 21, 31, 240),\n                    stop: 1 rgba(7, 18, 27, 244)\n                );\n                border: 1px solid #27546a;\n                border-radius: 12px;\n            }\n            QLabel#specimenEyebrow, QLabel#coordinateTitle,\n            QLabel#diagnosticTitle {\n                color: #5d91aa;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 1.3px;\n            }\n            QLabel#specimenName {\n                color: #eef8fc;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 15pt;\n                font-weight: 650;\n                letter-spacing: 0.2px;\n            }\n            QLabel#specimenMeta {\n                color: #587489;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 600;\n                letter-spacing: 0.5px;\n            }\n            QLabel#fingerprintTitle {\n                color: #5f9bb5;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.3pt;\n                font-weight: 700;\n                letter-spacing: 1.1px;\n            }\n            QFrame#temporalStatusNode {\n                background: rgba(11, 27, 39, 210);\n                border: 1px solid #203a4b;\n                border-radius: 9px;\n            }\n            QFrame#temporalStatusNode[signal="busy"] {\n                border-color: #2d6989;\n            }\n            QFrame#temporalStatusNode[signal="online"] {\n                border-color: #285c52;\n            }\n            QFrame#temporalStatusNode[signal="error"] {\n                border-color: #4c3335;\n            }\n            QLabel#temporalNodeTitle {\n                color: #55758a;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.4pt;\n                font-weight: 700;\n                letter-spacing: 1px;\n            }\n            QLabel#temporalNodeValue {\n                color: #cde0ea;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7.5pt;\n                font-weight: 700;\n            }\n            QLabel#sectionEyebrow, QLabel#cardTitle {\n                color: #6d8398;\n                font-size: 7.5pt;\n                font-weight: 700;\n                letter-spacing: 1.2px;\n            }\n            QLabel#sectionCount {\n                color: #52677b;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 600;\n            }\n            QLabel#sectionTitle {\n                color: #f1f6fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 17pt;\n                font-weight: 650;\n            }\n            QFrame#sidebar, QFrame#statCard, QFrame#playerDetail,\n            QFrame#temporalTransport {\n                background: rgba(16, 24, 34, 238);\n                border: 1px solid #1d2c3a;\n                border-radius: 13px;\n            }\n            QFrame#sidebar {\n                background: rgba(12, 19, 28, 242);\n                border-color: #1a2937;\n            }\n            QFrame#statCard {\n                background: rgba(15, 24, 34, 232);\n                border-color: #203142;\n            }\n            QFrame#temporalTransport {\n                background: rgba(8, 19, 29, 242);\n                border-color: #1d3a4d;\n            }\n            QScrollArea#cameraWorkspaceScroll,\n            QScrollArea#cameraWorkspaceScroll > QWidget > QWidget {\n                background: transparent;\n                border: 0;\n            }\n            QLabel#coordinateValue {\n                color: #8dd8f2;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7.5pt;\n                font-weight: 700;\n                letter-spacing: 0.5px;\n            }\n            QFrame#diagnosticRail {\n                background: rgba(7, 15, 23, 225);\n                border: 1px solid #162938;\n                border-radius: 8px;\n            }\n            QFrame#tableFocusRail {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 rgba(10, 42, 58, 245),\n                    stop: 0.55 rgba(9, 27, 39, 242),\n                    stop: 1 rgba(7, 19, 28, 245)\n                );\n                border: 1px solid #2a6077;\n                border-radius: 11px;\n            }\n            QLabel#focusEyebrow {\n                color: #68b2cf;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 700;\n                letter-spacing: 1.2px;\n            }\n            QLabel#focusTitle {\n                color: #f1f8fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 15pt;\n                font-weight: 650;\n            }\n            QLabel#focusMeta {\n                color: #7fb6ca;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 0.7px;\n            }\n            QLabel#diagnosticMode {\n                color: #456476;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.7pt;\n                font-weight: 700;\n                letter-spacing: 0.8px;\n            }\n            QFrame#transitionCard {\n                background: rgba(14, 23, 33, 238);\n                border: 1px solid #223448;\n                border-radius: 11px;\n            }\n            QFrame#transitionCard QLabel {\n                background: transparent;\n                border: 0;\n            }\n            QLabel#cardValue {\n                color: #f1f6fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 13.5pt;\n                font-weight: 620;\n            }\n            QLabel#heroPortrait {\n                background: #080e14;\n                border: 1px solid #365774;\n                border-radius: 12px;\n                color: #60758a;\n                font-size: 22pt;\n                font-weight: 700;\n            }\n            QLabel#playerName {\n                color: #f4f7fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 15.5pt;\n                font-weight: 650;\n            }\n            QLabel#identityBadge {\n                background: rgba(25, 55, 73, 170);\n                border: 1px solid #294b60;\n                border-radius: 6px;\n                color: #75b9d5;\n                padding: 3px 7px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.5pt;\n                font-weight: 700;\n                letter-spacing: 0.6px;\n            }\n            QFrame#sideSignal {\n                background: #4f6374;\n                border: 0;\n                border-radius: 2px;\n            }\n            QFrame#sideSignal[side="sentinel"] { background: #4ba7ed; }\n            QFrame#sideSignal[side="scourge"] { background: #d06964; }\n            QLabel#playerHero {\n                color: #6eb2ed;\n                font-size: 9.5pt;\n                font-weight: 600;\n            }\n            QLabel#playerMeta { color: #8799aa; }\n            QLabel#itemSlot {\n                background: #080e14;\n                border: 1px solid #2b4054;\n                border-radius: 9px;\n                color: #6f8295;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 8pt;\n                font-weight: 700;\n            }\n            QLabel#evidenceBadge {\n                background: rgba(28, 42, 53, 210);\n                border: 1px solid #304657;\n                border-radius: 6px;\n                color: #8094a5;\n                padding: 3px 7px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.6pt;\n                font-weight: 700;\n                letter-spacing: 0.5px;\n            }\n            QLabel#evidenceBadge[evidence="exact"] {\n                background: rgba(22, 76, 69, 150);\n                border-color: #347c69;\n                color: #83e2bd;\n            }\n            QLabel#evidenceBadge[evidence="reconstructed"] {\n                background: rgba(78, 61, 24, 150);\n                border-color: #8b7034;\n                color: #e4c774;\n            }\n            QPushButton {\n                background: #152231;\n                border: 1px solid #27394a;\n                border-radius: 8px;\n                padding: 8px 13px;\n                color: #c9d6e2;\n                font-weight: 600;\n            }\n            QPushButton:hover {\n                background: #1b2c3d;\n                border-color: #3b536a;\n                color: #f1f6fb;\n            }\n            QPushButton:pressed {\n                background: #102033;\n                border-color: #4b8ecb;\n            }\n            QPushButton[role="primary"] {\n                background: #2469aa;\n                border-color: #327dbd;\n                color: #ffffff;\n            }\n            QPushButton[role="primary"]:hover {\n                background: #2c78bb;\n                border-color: #55a0df;\n            }\n            QPushButton[role="secondary"] { background: #162433; }\n            QPushButton[density="compact"] {\n                padding: 5px 10px;\n                min-height: 18px;\n                font-size: 8.5pt;\n            }\n            QPushButton[role="ghost"] {\n                background: transparent;\n                border-color: #243546;\n                color: #8da0b3;\n            }\n            QPushButton:disabled {\n                background: #121a24;\n                border-color: #1d2935;\n                color: #526170;\n            }\n            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {\n                background: #090f16;\n                border: 1px solid #2a3c4f;\n                border-radius: 8px;\n                color: #e6edf5;\n                padding: 7px 9px;\n                selection-background-color: #245b8c;\n            }\n            QLineEdit, QSpinBox, QDoubleSpinBox, QLabel#timeLabel {\n                font-family: "Cascadia Mono", "Consolas";\n                font-variant-numeric: tabular-nums;\n            }\n            QLineEdit:focus, QComboBox:focus,\n            QSpinBox:focus, QDoubleSpinBox:focus {\n                border-color: #4b94d3;\n            }\n            QComboBox::drop-down {\n                width: 24px;\n                border: 0;\n                background: transparent;\n            }\n            QComboBox QAbstractItemView {\n                background: #101923;\n                border: 1px solid #2b4156;\n                color: #dce6ef;\n                selection-background-color: #193c5d;\n                outline: 0;\n            }\n            QCheckBox { color: #a7b6c5; spacing: 8px; }\n            QCheckBox::indicator {\n                width: 15px;\n                height: 15px;\n                background: #090f16;\n                border: 1px solid #334a60;\n                border-radius: 4px;\n            }\n            QCheckBox::indicator:checked {\n                background: #327fc2;\n                border-color: #68ace4;\n            }\n            QListWidget, QTableWidget {\n                background: rgba(12, 19, 28, 244);\n                alternate-background-color: rgba(15, 24, 34, 244);\n                border: 1px solid #1d2c3a;\n                border-radius: 11px;\n                gridline-color: transparent;\n                selection-background-color: #173e63;\n                selection-color: #f6f9fc;\n                outline: 0;\n            }\n            QListWidget::item {\n                border-radius: 9px;\n            }\n            QListWidget#replayLibrary {\n                background: transparent;\n                border: 0;\n                padding: 2px 1px;\n                outline: 0;\n            }\n            QListWidget#replayLibrary::item {\n                background: rgba(15, 24, 34, 220);\n                border: 1px solid #1e2d3b;\n                border-radius: 11px;\n                color: transparent;\n            }\n            QListWidget#replayLibrary::item:hover {\n                background: rgba(22, 36, 49, 236);\n                border-color: #354c62;\n            }\n            QListWidget#replayLibrary::item:selected {\n                background: #142f49;\n                border: 1px solid #438bc7;\n            }\n            QLabel#replayCardTitle {\n                color: #dbe5ee;\n                font-size: 9.5pt;\n                font-weight: 620;\n            }\n            QLabel#replayCardMeta {\n                color: #60758a;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 600;\n            }\n            QHeaderView::section {\n                background: #121d28;\n                color: #73879a;\n                border: 0;\n                border-bottom: 1px solid #223241;\n                padding: 9px 8px;\n                font-size: 8pt;\n                font-weight: 700;\n            }\n            QTableCornerButton::section {\n                background: #121d28;\n                border: 0;\n                border-bottom: 1px solid #223241;\n            }\n            QTabWidget::pane {\n                border: 1px solid #1d2c3a;\n                border-radius: 11px;\n                background: rgba(10, 16, 24, 238);\n            }\n            QTabBar#productTabBar::tab {\n                background: transparent;\n                color: #72869a;\n                padding: 10px 17px;\n                margin-right: 5px;\n                border: 1px solid transparent;\n                border-radius: 9px;\n                font-weight: 620;\n            }\n            QTabBar#productTabBar::tab:hover {\n                background: #111d28;\n                color: #a9bac9;\n            }\n            QTabBar#productTabBar::tab:selected {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 0, y2: 1,\n                    stop: 0 #1d3950,\n                    stop: 1 #14293b\n                );\n                border-color: #37637f;\n                color: #f0f6fb;\n            }\n            QTabBar#sectionTabBar::tab {\n                background: transparent;\n                color: #718599;\n                padding: 9px 14px;\n                border: 0;\n                border-bottom: 2px solid transparent;\n                font-size: 9pt;\n                font-weight: 600;\n            }\n            QTabBar#sectionTabBar::tab:hover { color: #b4c3d0; }\n            QTabBar#sectionTabBar::tab:selected {\n                color: #dceaf5;\n                border-bottom-color: #4a95d3;\n            }\n            QLabel#hint { color: #74889c; }\n            QLabel#statusLabel {\n                color: #64798d;\n                border: 0;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7.5pt;\n            }\n            QLabel#timeLabel {\n                color: #eaf2f8;\n                font-weight: 650;\n            }\n            QLabel#connectionStandby { color: #71889a; }\n            QLabel#connectionOffline { color: #df786a; }\n            QLabel#connectionOnline { color: #66d49b; }\n            QSlider::groove:horizontal {\n                height: 5px;\n                background: #203746;\n                border-radius: 3px;\n            }\n            QSlider::sub-page:horizontal {\n                background: #4eb8dd;\n                border-radius: 3px;\n            }\n            QSlider::handle:horizontal {\n                background: #e9f3fb;\n                border: 3px solid #42a8d3;\n                width: 12px;\n                margin: -6px 0;\n                border-radius: 9px;\n            }\n            QSplitter::handle { background: transparent; width: 10px; }\n            QScrollBar#floatingScrollBar:vertical {\n                background: transparent;\n                border: 0;\n                width: 10px;\n                margin: 0;\n            }\n            QScrollBar#floatingScrollBar:horizontal {\n                background: transparent;\n                border: 0;\n                height: 10px;\n                margin: 0;\n            }\n            QScrollBar#floatingScrollBar::handle:vertical {\n                background: transparent;\n                min-height: 34px;\n            }\n            QScrollBar#floatingScrollBar::handle:horizontal {\n                background: transparent;\n                min-width: 34px;\n            }\n            QScrollBar#floatingScrollBar::add-line,\n            QScrollBar#floatingScrollBar::sub-line {\n                width: 0;\n                height: 0;\n                background: transparent;\n                border: 0;\n            }\n            QScrollBar#floatingScrollBar::add-page,\n            QScrollBar#floatingScrollBar::sub-page {\n                background: transparent;\n                border: 0;\n            }\n            QAbstractScrollArea::corner {\n                background: transparent;\n                border: 0;\n            }\n            QToolTip {\n                background: #111b25;\n                color: #dbe5ee;\n                border: 1px solid #31475b;\n                padding: 6px;\n            }\n            ')
+        self.setStyleSheet('\n            QMainWindow, QDialog, QMessageBox { background: #080c12; }\n            QWidget {\n                color: #d8e2ed;\n                font-family: "Segoe UI Variable Text", "Segoe UI";\n                font-size: 10pt;\n            }\n            QWidget#obsidianSurface, QWidget#contentArea {\n                background: transparent;\n            }\n            QFrame#topBar {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 rgba(7, 18, 28, 244),\n                    stop: 0.38 rgba(9, 29, 43, 244),\n                    stop: 1 rgba(7, 15, 23, 244)\n                );\n                border: 1px solid #24465a;\n                border-radius: 14px;\n            }\n            QLabel#labMark {\n                background: #06101a;\n                border: 1px solid #28516a;\n                border-radius: 12px;\n                padding: 1px;\n            }\n            QLabel#appTitle {\n                color: #f4f8fc;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 16pt;\n                font-weight: 650;\n                letter-spacing: -0.4px;\n            }\n            QLabel#appSubtitle {\n                color: #60768b;\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 1.5px;\n            }\n            QLabel#labChip {\n                background: rgba(20, 83, 111, 72);\n                border: 1px solid #245267;\n                border-radius: 7px;\n                color: #83cfe8;\n                padding: 5px 9px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 600;\n            }\n            QLabel#systemState {\n                color: #6f8498;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 0.8px;\n            }\n            QLabel#systemState[signal="busy"] { color: #72c2f1; }\n            QLabel#systemState[signal="online"] { color: #75dcb1; }\n            QLabel#systemState[signal="error"] { color: #ef8174; }\n            QFrame#temporalContextBar {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 rgba(8, 27, 40, 244),\n                    stop: 0.48 rgba(8, 21, 31, 240),\n                    stop: 1 rgba(7, 18, 27, 244)\n                );\n                border: 1px solid #27546a;\n                border-radius: 12px;\n            }\n            QLabel#specimenEyebrow, QLabel#coordinateTitle,\n            QLabel#diagnosticTitle {\n                color: #5d91aa;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 1.3px;\n            }\n            QLabel#specimenName {\n                color: #eef8fc;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 15pt;\n                font-weight: 650;\n                letter-spacing: 0.2px;\n            }\n            QLabel#specimenMeta {\n                color: #587489;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 600;\n                letter-spacing: 0.5px;\n            }\n            QLabel#fingerprintTitle {\n                color: #5f9bb5;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.3pt;\n                font-weight: 700;\n                letter-spacing: 1.1px;\n            }\n            QFrame#temporalStatusNode {\n                background: rgba(11, 27, 39, 210);\n                border: 1px solid #203a4b;\n                border-radius: 9px;\n            }\n            QFrame#temporalStatusNode[signal="busy"] {\n                border-color: #2d6989;\n            }\n            QFrame#temporalStatusNode[signal="online"] {\n                border-color: #285c52;\n            }\n            QFrame#temporalStatusNode[signal="error"] {\n                border-color: #4c3335;\n            }\n            QLabel#temporalNodeTitle {\n                color: #55758a;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.4pt;\n                font-weight: 700;\n                letter-spacing: 1px;\n            }\n            QLabel#temporalNodeValue {\n                color: #cde0ea;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7.5pt;\n                font-weight: 700;\n            }\n            QLabel#sectionEyebrow, QLabel#cardTitle {\n                color: #6d8398;\n                font-size: 7.5pt;\n                font-weight: 700;\n                letter-spacing: 1.2px;\n            }\n            QLabel#sectionCount {\n                color: #52677b;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 600;\n            }\n            QLabel#sectionTitle {\n                color: #f1f6fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 17pt;\n                font-weight: 650;\n            }\n            QFrame#sidebar, QFrame#statCard, QFrame#playerDetail,\n            QFrame#temporalTransport {\n                background: rgba(16, 24, 34, 238);\n                border: 1px solid #1d2c3a;\n                border-radius: 13px;\n            }\n            QFrame#sidebar {\n                background: rgba(12, 19, 28, 242);\n                border-color: #1a2937;\n            }\n            QFrame#statCard {\n                background: rgba(15, 24, 34, 232);\n                border-color: #203142;\n            }\n            QFrame#temporalTransport {\n                background: rgba(8, 19, 29, 242);\n                border-color: #1d3a4d;\n            }\n            QScrollArea#cameraWorkspaceScroll,\n            QScrollArea#cameraWorkspaceScroll > QWidget > QWidget {\n                background: transparent;\n                border: 0;\n            }\n            QScrollArea#cameraDroneScroll,\n            QScrollArea#cameraDroneScroll > QWidget,\n            QScrollArea#cameraDroneScroll > QWidget > QWidget,\n            QWidget#cameraDronePage {\n                background: #080c12;\n                border: 0;\n            }\n            QLabel#coordinateValue {\n                color: #8dd8f2;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7.5pt;\n                font-weight: 700;\n                letter-spacing: 0.5px;\n            }\n            QFrame#diagnosticRail {\n                background: rgba(7, 15, 23, 225);\n                border: 1px solid #162938;\n                border-radius: 8px;\n            }\n            QFrame#tableFocusRail {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 rgba(10, 42, 58, 245),\n                    stop: 0.55 rgba(9, 27, 39, 242),\n                    stop: 1 rgba(7, 19, 28, 245)\n                );\n                border: 1px solid #2a6077;\n                border-radius: 11px;\n            }\n            QFrame#graphHeader {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 rgba(9, 35, 49, 238),\n                    stop: 0.6 rgba(10, 25, 36, 235),\n                    stop: 1 rgba(8, 19, 28, 238)\n                );\n                border: 1px solid #244b5f;\n                border-radius: 11px;\n            }\n            QLabel#graphEyebrow, QLabel#graphControlLabel {\n                color: #669ab1;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.6pt;\n                font-weight: 700;\n                letter-spacing: 1px;\n            }\n            QLabel#graphTitle {\n                color: #eff8fc;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 14pt;\n                font-weight: 650;\n            }\n            QLabel#graphEvidenceSummary {\n                color: #7890a2;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 600;\n            }\n            QLabel#focusEyebrow {\n                color: #68b2cf;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 700;\n                letter-spacing: 1.2px;\n            }\n            QLabel#focusTitle {\n                color: #f1f8fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 15pt;\n                font-weight: 650;\n            }\n            QLabel#focusMeta {\n                color: #7fb6ca;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7pt;\n                font-weight: 700;\n                letter-spacing: 0.7px;\n            }\n            QLabel#diagnosticMode {\n                color: #456476;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.7pt;\n                font-weight: 700;\n                letter-spacing: 0.8px;\n            }\n            QFrame#transitionCard {\n                background: rgba(14, 23, 33, 238);\n                border: 1px solid #223448;\n                border-radius: 11px;\n            }\n            QFrame#transitionCard QLabel {\n                background: transparent;\n                border: 0;\n            }\n            QLabel#cardValue {\n                color: #f1f6fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 13.5pt;\n                font-weight: 620;\n            }\n            QLabel#heroPortrait {\n                background: #080e14;\n                border: 1px solid #365774;\n                border-radius: 12px;\n                color: #60758a;\n                font-size: 22pt;\n                font-weight: 700;\n            }\n            QLabel#playerName {\n                color: #f4f7fb;\n                font-family: "Segoe UI Variable Display", "Segoe UI";\n                font-size: 15.5pt;\n                font-weight: 650;\n            }\n            QLabel#identityBadge {\n                background: rgba(25, 55, 73, 170);\n                border: 1px solid #294b60;\n                border-radius: 6px;\n                color: #75b9d5;\n                padding: 3px 7px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.5pt;\n                font-weight: 700;\n                letter-spacing: 0.6px;\n            }\n            QFrame#sideSignal {\n                background: #4f6374;\n                border: 0;\n                border-radius: 2px;\n            }\n            QFrame#sideSignal[side="sentinel"] { background: #4ba7ed; }\n            QFrame#sideSignal[side="scourge"] { background: #d06964; }\n            QLabel#playerHero {\n                color: #6eb2ed;\n                font-size: 9.5pt;\n                font-weight: 600;\n            }\n            QLabel#playerMeta { color: #8799aa; }\n            QLabel#itemSlot {\n                background: #080e14;\n                border: 1px solid #2b4054;\n                border-radius: 9px;\n                color: #6f8295;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 8pt;\n                font-weight: 700;\n            }\n            QLabel#evidenceBadge {\n                background: rgba(28, 42, 53, 210);\n                border: 1px solid #304657;\n                border-radius: 6px;\n                color: #8094a5;\n                padding: 3px 7px;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.6pt;\n                font-weight: 700;\n                letter-spacing: 0.5px;\n            }\n            QLabel#evidenceBadge[evidence="exact"] {\n                background: rgba(22, 76, 69, 150);\n                border-color: #347c69;\n                color: #83e2bd;\n            }\n            QLabel#evidenceBadge[evidence="reconstructed"] {\n                background: rgba(78, 61, 24, 150);\n                border-color: #8b7034;\n                color: #e4c774;\n            }\n            QLabel#evidenceBadge[evidence="sampled"] {\n                background: rgba(21, 58, 82, 175);\n                border-color: #347393;\n                color: #8bd8ee;\n            }\n            QLabel#evidenceBadge[evidence="pending"] {\n                background: rgba(35, 43, 52, 185);\n                border-color: #3a4a58;\n                color: #7d91a1;\n            }\n            QFrame#deepAnalysisRail {\n                background: rgba(7, 17, 25, 232);\n                border: 1px solid #1b3545;\n                border-radius: 9px;\n            }\n            QFrame#deepAnalysisRail[state="running"] {\n                background: rgba(8, 28, 39, 238);\n                border-color: #2c718d;\n            }\n            QFrame#deepAnalysisRail[state="cached"] {\n                background: rgba(8, 35, 32, 238);\n                border-color: #347c69;\n            }\n            QFrame#deepAnalysisRail[state="error"] {\n                background: rgba(39, 21, 22, 238);\n                border-color: #764346;\n            }\n            QLabel#deepAnalysisState {\n                color: #6f9db1;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 700;\n                letter-spacing: 0.9px;\n                min-width: 96px;\n            }\n            QLabel#deepAnalysisState[state="running"] { color: #7bd8f2; }\n            QLabel#deepAnalysisState[state="cached"] { color: #83e2bd; }\n            QLabel#deepAnalysisState[state="error"] { color: #ef9b94; }\n            QLabel#deepAnalysisMessage {\n                color: #8299aa;\n                font-size: 8pt;\n            }\n            QProgressBar#deepAnalysisProgress {\n                background: #071019;\n                border: 1px solid #233c4b;\n                border-radius: 4px;\n                min-height: 7px;\n                max-height: 7px;\n            }\n            QProgressBar#deepAnalysisProgress::chunk {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 #297da1,\n                    stop: 1 #69d3e8\n                );\n                border-radius: 3px;\n            }\n            QPushButton {\n                background: #152231;\n                border: 1px solid #27394a;\n                border-radius: 8px;\n                padding: 8px 13px;\n                color: #c9d6e2;\n                font-weight: 600;\n            }\n            QPushButton:hover {\n                background: #1b2c3d;\n                border-color: #3b536a;\n                color: #f1f6fb;\n            }\n            QPushButton:pressed {\n                background: #102033;\n                border-color: #4b8ecb;\n            }\n            QPushButton[role="primary"] {\n                background: #2469aa;\n                border-color: #327dbd;\n                color: #ffffff;\n            }\n            QPushButton[role="primary"]:hover {\n                background: #2c78bb;\n                border-color: #55a0df;\n            }\n            QPushButton[role="secondary"] { background: #162433; }\n            QPushButton#deepAnalysisButton[role="analysis"] {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 #176485,\n                    stop: 0.55 #217fa0,\n                    stop: 1 #278e9c\n                );\n                border: 1px solid #54b7c5;\n                color: #f4fdff;\n                padding: 9px 16px;\n                font-weight: 700;\n            }\n            QPushButton#deepAnalysisButton[role="analysis"]:hover {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 1, y2: 0,\n                    stop: 0 #1d759a,\n                    stop: 1 #35a3ad\n                );\n                border-color: #88deea;\n            }\n            QPushButton#deepAnalysisButton[role="analysis"]:disabled {\n                background: #12242d;\n                border-color: #29414c;\n                color: #55717d;\n            }\n            QPushButton[density="compact"] {\n                padding: 5px 10px;\n                min-height: 18px;\n                font-size: 8.5pt;\n            }\n            QPushButton[role="ghost"] {\n                background: transparent;\n                border-color: #243546;\n                color: #8da0b3;\n            }\n            QPushButton:disabled {\n                background: #121a24;\n                border-color: #1d2935;\n                color: #526170;\n            }\n            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {\n                background: #090f16;\n                border: 1px solid #2a3c4f;\n                border-radius: 8px;\n                color: #e6edf5;\n                padding: 7px 9px;\n                selection-background-color: #245b8c;\n            }\n            QLineEdit, QSpinBox, QDoubleSpinBox, QLabel#timeLabel {\n                font-family: "Cascadia Mono", "Consolas";\n                font-variant-numeric: tabular-nums;\n            }\n            QLineEdit:focus, QComboBox:focus,\n            QSpinBox:focus, QDoubleSpinBox:focus {\n                border-color: #4b94d3;\n            }\n            QComboBox::drop-down {\n                width: 24px;\n                border: 0;\n                background: transparent;\n            }\n            QComboBox QAbstractItemView {\n                background: #101923;\n                border: 1px solid #2b4156;\n                color: #dce6ef;\n                selection-background-color: #193c5d;\n                outline: 0;\n            }\n            QCheckBox { color: #a7b6c5; spacing: 8px; }\n            QCheckBox::indicator {\n                width: 15px;\n                height: 15px;\n                background: #090f16;\n                border: 1px solid #334a60;\n                border-radius: 4px;\n            }\n            QCheckBox::indicator:checked {\n                background: #327fc2;\n                border-color: #68ace4;\n            }\n            QListWidget, QTableWidget {\n                background: rgba(12, 19, 28, 244);\n                alternate-background-color: rgba(15, 24, 34, 244);\n                border: 1px solid #1d2c3a;\n                border-radius: 11px;\n                gridline-color: transparent;\n                selection-background-color: #173e63;\n                selection-color: #f6f9fc;\n                outline: 0;\n            }\n            QListWidget::item {\n                border-radius: 9px;\n            }\n            QListWidget#replayLibrary {\n                background: transparent;\n                border: 0;\n                padding: 2px 1px;\n                outline: 0;\n            }\n            QListWidget#replayLibrary::item {\n                background: rgba(15, 24, 34, 220);\n                border: 1px solid #1e2d3b;\n                border-radius: 11px;\n                color: transparent;\n            }\n            QListWidget#replayLibrary::item:hover {\n                background: rgba(22, 36, 49, 236);\n                border-color: #354c62;\n            }\n            QListWidget#replayLibrary::item:selected {\n                background: #142f49;\n                border: 1px solid #438bc7;\n            }\n            QLabel#replayCardTitle {\n                color: #dbe5ee;\n                font-size: 9.5pt;\n                font-weight: 620;\n            }\n            QLabel#replayCardMeta {\n                color: #60758a;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 6.8pt;\n                font-weight: 600;\n            }\n            QHeaderView::section {\n                background: #121d28;\n                color: #73879a;\n                border: 0;\n                border-bottom: 1px solid #223241;\n                padding: 9px 8px;\n                font-size: 8pt;\n                font-weight: 700;\n            }\n            QTableCornerButton::section {\n                background: #121d28;\n                border: 0;\n                border-bottom: 1px solid #223241;\n            }\n            QTabWidget::pane {\n                border: 1px solid #1d2c3a;\n                border-radius: 11px;\n                background: rgba(10, 16, 24, 238);\n            }\n            QTabBar#productTabBar::tab {\n                background: transparent;\n                color: #72869a;\n                padding: 10px 17px;\n                margin-right: 5px;\n                border: 1px solid transparent;\n                border-radius: 9px;\n                font-weight: 620;\n            }\n            QTabBar#productTabBar::tab:hover {\n                background: #111d28;\n                color: #a9bac9;\n            }\n            QTabBar#productTabBar::tab:selected {\n                background: qlineargradient(\n                    x1: 0, y1: 0, x2: 0, y2: 1,\n                    stop: 0 #1d3950,\n                    stop: 1 #14293b\n                );\n                border-color: #37637f;\n                color: #f0f6fb;\n            }\n            QTabBar#sectionTabBar::tab {\n                background: transparent;\n                color: #718599;\n                padding: 9px 14px;\n                border: 0;\n                border-bottom: 2px solid transparent;\n                font-size: 9pt;\n                font-weight: 600;\n            }\n            QTabBar#sectionTabBar::tab:hover { color: #b4c3d0; }\n            QTabBar#sectionTabBar::tab:selected {\n                color: #dceaf5;\n                border-bottom-color: #4a95d3;\n            }\n            QLabel#hint { color: #74889c; }\n            QLabel#statusLabel {\n                color: #64798d;\n                border: 0;\n                font-family: "Cascadia Mono", "Consolas";\n                font-size: 7.5pt;\n            }\n            QLabel#timeLabel {\n                color: #eaf2f8;\n                font-weight: 650;\n            }\n            QLabel#connectionStandby { color: #71889a; }\n            QLabel#connectionOffline { color: #df786a; }\n            QLabel#connectionOnline { color: #66d49b; }\n            QSlider::groove:horizontal {\n                height: 5px;\n                background: #203746;\n                border-radius: 3px;\n            }\n            QSlider::sub-page:horizontal {\n                background: #4eb8dd;\n                border-radius: 3px;\n            }\n            QSlider::handle:horizontal {\n                background: #e9f3fb;\n                border: 3px solid #42a8d3;\n                width: 12px;\n                margin: -6px 0;\n                border-radius: 9px;\n            }\n            QSplitter::handle { background: transparent; width: 10px; }\n            QScrollBar#floatingScrollBar:vertical {\n                background: transparent;\n                border: 0;\n                width: 10px;\n                margin: 0;\n            }\n            QScrollBar#floatingScrollBar:horizontal {\n                background: transparent;\n                border: 0;\n                height: 10px;\n                margin: 0;\n            }\n            QScrollBar#floatingScrollBar::handle:vertical {\n                background: transparent;\n                min-height: 34px;\n            }\n            QScrollBar#floatingScrollBar::handle:horizontal {\n                background: transparent;\n                min-width: 34px;\n            }\n            QScrollBar#floatingScrollBar::add-line,\n            QScrollBar#floatingScrollBar::sub-line {\n                width: 0;\n                height: 0;\n                background: transparent;\n                border: 0;\n            }\n            QScrollBar#floatingScrollBar::add-page,\n            QScrollBar#floatingScrollBar::sub-page {\n                background: transparent;\n                border: 0;\n            }\n            QAbstractScrollArea::corner {\n                background: transparent;\n                border: 0;\n            }\n            QToolTip {\n                background: #111b25;\n                color: #dbe5ee;\n                border: 1px solid #31475b;\n                padding: 6px;\n            }\n            ')
 
 def main() -> int:
     log_path = configure_diagnostics()
@@ -4142,6 +4691,11 @@ def main() -> int:
         index = sys.argv.index('--self-test-replay')
         if index + 1 < len(sys.argv):
             replay_argument = Path(sys.argv[index + 1])
+    deep_analysis_sidecar_argument: Path | None = None
+    if '--self-test-deep-analysis-sidecar' in sys.argv:
+        index = sys.argv.index('--self-test-deep-analysis-sidecar')
+        if index + 1 < len(sys.argv):
+            deep_analysis_sidecar_argument = Path(sys.argv[index + 1])
     app = QApplication.instance() or QApplication([sys.argv[0]])
     app.setApplicationName(APP_NAME)
     app.setOrganizationName('ReplayLab')
@@ -4168,7 +4722,7 @@ def main() -> int:
             return 26
         expected_camera_tabs = ('Управление', 'Герои · 10', 'Операторские шоты', 'Fly Drone')
         expected_product_tabs = ('Статистика', 'Просмотр', 'Съёмка')
-        expected_statistics_tabs = ('Игроки', 'Чат')
+        expected_statistics_tabs = ('Игроки', 'Графики', 'Чат')
         expected_view_tabs = ('События', 'HUD и оверлеи')
         actual_product_tabs = tuple((window.tabs.tabText(index) for index in range(window.tabs.count())))
         actual_statistics_tabs = tuple((window.stats_sections.tabText(index) for index in range(window.stats_sections.count())))
@@ -4189,10 +4743,16 @@ def main() -> int:
             for view_index in range(window.view_sections.count()):
                 window.view_sections.setCurrentIndex(view_index)
                 app.processEvents()
+            for section_index in range(window.stats_sections.count()):
+                window.stats_sections.setCurrentIndex(section_index)
+                app.processEvents()
         window.show()
         app.processEvents()
         exercise_tabs()
         if window.camera_scroll.verticalScrollBar().maximum() <= 0:
+            window.close()
+            return 23
+        if widget_light_surface_ratio(window.camera_drone_scroll.viewport()) > 0.08:
             window.close()
             return 23
         if replay_argument is not None:
@@ -4211,7 +4771,50 @@ def main() -> int:
             inventory_player = next((player for player in window.report.dota_players if player.inventory_source), None)
             if inventory_player is not None:
                 window._show_player_detail(inventory_player)
-            if hero_count <= 0 or not window._replay_moments or (not any(window.temporal_fingerprint._bins)) or (window.chat_table.rowCount() <= 0) or (window.system_state_label.text() != 'REPLAY READY') or (window.temporal_source_node.value_label.text() != 'W3G / PARSED') or (not window.temporal_model_node.value_label.text().endswith('IDENTITIES')) or (inventory_player is not None and window.inventory_evidence.text() == 'NO SIGNAL'):
+            metric_order = tuple((data for index in range(window.graph_metric.count()) if (data := window.graph_metric.itemData(index)) is not None))
+            if metric_order != ('gpm', 'xpm', 'net_worth', 'farm') or window.graph_metric.currentData() != 'gpm' or window.creep_graph.active_point_count() != 0 or (window.graph_evidence_badge.text() != 'WAITING FOR ANALYSIS') or (window.deep_analysis_button.objectName() != 'deepAnalysisButton'):
+                window.close()
+                return 24
+            if deep_analysis_sidecar_argument is not None:
+                if not deep_analysis_sidecar_argument.is_file():
+                    window.close()
+                    return 28
+                try:
+                    deep_bundle = bundle_from_json(deep_analysis_sidecar_argument)
+                except (OSError, TypeError, ValueError):
+                    window.close()
+                    return 28
+                if deep_bundle.identity.replay_sha256.lower() != sha256_file(replay_argument).lower():
+                    window.close()
+                    return 28
+                window._deep_analysis_ready(deep_bundle)
+                app.processEvents()
+                for metric in ('gpm', 'xpm'):
+                    slots = deep_bundle.valid_slots_for(metric)
+                    metric_index = window.graph_metric.findData(metric)
+                    if metric_index < 0 or not slots:
+                        window.close()
+                        return 28
+                    window.graph_metric.setCurrentIndex(metric_index)
+                    for slot in slots:
+                        player_index = window.graph_primary_player.findData(slot)
+                        if player_index < 0:
+                            window.close()
+                            return 28
+                        window.graph_primary_player.setCurrentIndex(player_index)
+                        app.processEvents()
+                        if window.creep_graph.active_point_count() <= 0:
+                            window.close()
+                            return 28
+                window.graph_metric.setCurrentIndex(window.graph_metric.findData('gpm'))
+                app.processEvents()
+                if window.graph_evidence_badge.text() != 'EVENT EXACT':
+                    window.close()
+                    return 28
+            farm_index = window.graph_metric.findData('farm')
+            window.graph_metric.setCurrentIndex(farm_index)
+            app.processEvents()
+            if hero_count <= 0 or not window._replay_moments or (not any(window.temporal_fingerprint._bins)) or (window.chat_table.rowCount() <= 0) or (window.system_state_label.text() != 'REPLAY READY') or (window.temporal_source_node.value_label.text() != 'W3G / PARSED') or (not window.temporal_model_node.value_label.text().endswith('IDENTITIES')) or (window.creep_graph.active_point_count() <= 0) or ('точек' not in window.graph_evidence_summary.text()) or (inventory_player is not None and window.inventory_evidence.text() == 'NO SIGNAL'):
                 window.close()
                 return 24
             for slot_index, hero_slot in enumerate(window.camera_hero_slots):

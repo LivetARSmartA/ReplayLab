@@ -1,32 +1,18 @@
 from __future__ import annotations
+import json
 import os
-import struct
 import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from .diagnostics import get_logger, open_native_stderr
 from .native_runtime import native_binary_candidates
 from .seeker import SeekBackendError
-HOST_MAGIC = 1414286418
-HOST_PROTOCOL_VERSION = 6
-HOST_CONFIGURE = 1
-HOST_SNAPSHOT = 2
-HOST_SET_TARGET = 3
-HOST_PING = 4
-HOST_SHUTDOWN = 5
-HOST_PREPARE_TARGETS = 7
-HOST_MAX_ABILITIES = 64
+HOST_PROTOCOL = 'replaylab-telemetry-v7'
 HOST_MAX_TARGETS = 10
-HOST_HEADER = struct.Struct('<IHHII')
-HOST_CONFIG = struct.Struct('<IIII')
-HOST_TARGET = struct.Struct('<III')
-HOST_TARGETS = struct.Struct('<I' + 'III' * HOST_MAX_TARGETS)
-HOST_RESPONSE_PREFIX = struct.Struct('<14IQQ')
-HOST_ABILITY = struct.Struct('<4I')
-HOST_RESPONSE_SIZE = HOST_RESPONSE_PREFIX.size + HOST_MAX_ABILITIES * HOST_ABILITY.size
 LOGGER = get_logger('skills_hud')
-HOST_STATUS = {1: 'Skills HUD получил неверный ответ', 2: 'Skills HUD ещё не подключён к Warcraft', 3: 'Не удалось подключить Skills HUD к Warcraft', 4: 'Эта сборка Warcraft не поддерживается Skills HUD', 5: 'Герой выбранного игрока пока не найден в памяти Warcraft', 6: 'Skills HUD не смог прочитать состояние способностей', 7: 'Warcraft III был закрыт'}
+HOST_STATUS = {1: 'Skills HUD received an invalid request', 2: 'Skills HUD is not attached to Warcraft', 3: 'Skills HUD could not attach to Warcraft', 4: 'This Warcraft build is unsupported by Skills HUD', 5: "The selected player's hero is not available in Warcraft memory yet", 6: 'Skills HUD could not read the ability state', 7: 'Warcraft III has exited'}
 
 class TelemetryHostError(SeekBackendError):
 
@@ -50,9 +36,13 @@ def rawcode_text(value: int) -> str:
         result = int(value).to_bytes(4, 'big').decode('latin-1')
     except (OverflowError, UnicodeDecodeError) as exc:
         raise ValueError('Invalid rawcode value') from exc
-    if any((not 32 <= ord(character) <= 126 for character in result)):
-        raise ValueError('Rawcode contains non-printable characters')
+    _validate_rawcode(result)
     return result
+
+def _validate_rawcode(rawcode: str) -> str:
+    if len(rawcode) != 4 or any((not 32 <= ord(character) <= 126 for character in rawcode)):
+        raise ValueError('Rawcode must contain four printable characters')
+    return rawcode
 
 @dataclass(frozen=True)
 class LiveAbilityState:
@@ -88,98 +78,77 @@ def find_native_telemetry_host() -> Path:
     for candidate in _native_host_candidates():
         if candidate.is_file():
             return candidate.resolve()
-    raise SeekBackendError('Компонент Skills HUD не найден. Переустанови ReplayLab.')
+    raise SeekBackendError('Skills HUD native component was not found. Reinstall ReplayLab.')
 
 class NativeTelemetryHost:
 
     def __init__(self, player_slot: int, hero_rawcode: str, *, process_id: int=0, executable: Path | None=None) -> None:
         if os.name != 'nt':
-            raise SeekBackendError('Skills HUD работает только в Windows')
-        target = self._target_payload(player_slot, hero_rawcode)
+            raise SeekBackendError('Skills HUD requires Windows')
         if process_id < 0 or process_id > 4294967295:
             raise ValueError('Process id is invalid')
+        target = self._target_fields(player_slot, hero_rawcode)
         host = executable.resolve() if executable else find_native_telemetry_host()
         creation_flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
         self._stderr_log = open_native_stderr('skills-hud')
         try:
-            self._process = subprocess.Popen([str(host)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self._stderr_log, bufsize=0, creationflags=creation_flags)
+            self._process: subprocess.Popen[str] = subprocess.Popen([str(host)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self._stderr_log, text=True, encoding='utf-8', errors='strict', bufsize=1, creationflags=creation_flags)
         except Exception:
             self._stderr_log.close()
             LOGGER.exception('Could not start telemetry host: %s', host)
             raise
-        LOGGER.info('Telemetry host started: %s', host)
         self._lock = threading.Lock()
         self._close_lock = threading.Lock()
         self._request_id = 0
         self._closed = False
         self._last_status = 0
         try:
-            self._exchange(HOST_CONFIGURE, struct.pack('<I', process_id) + target, accepted_statuses=frozenset({5, 6}))
+            self._exchange('configure', {'process_id': process_id, **target}, accepted_statuses=frozenset({5, 6}))
         except Exception:
             self.close()
             raise
+        LOGGER.info('Telemetry host started: %s', host)
 
     @staticmethod
-    def _target_payload(player_slot: int, hero_rawcode: str, hero_address: int=0) -> bytes:
+    def _target_fields(player_slot: int, hero_rawcode: str, hero_address: int=0) -> dict[str, object]:
         if not 0 <= player_slot <= 15:
             raise ValueError('Player slot must be in range 0..15')
         if not 0 <= hero_address <= 4294967295:
             raise ValueError('Hero address is invalid')
-        return HOST_TARGET.pack(player_slot, rawcode_value(hero_rawcode), hero_address)
+        return {'player_slot': player_slot, 'hero_rawcode': _validate_rawcode(hero_rawcode), 'hero_address': hero_address}
 
     @staticmethod
-    def _read_exact(stream: object, size: int) -> bytes:
-        chunks: list[bytes] = []
-        remaining = size
-        while remaining:
-            chunk = stream.read(remaining)
-            if not chunk:
-                raise SeekBackendError('Компонент Skills HUD неожиданно завершился')
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        return b''.join(chunks)
+    def _decode_snapshot(payload: dict[str, Any]) -> TelemetrySnapshot:
+        abilities = tuple((LiveAbilityState(rawcode=_validate_rawcode(str(row['rawcode'])), level=int(row['level']), flags=int(row['flags']), cooldown_ms=int(row['cooldown_ms'])) for row in payload.get('abilities', []) if isinstance(row, dict)))
+        selected_rawcode = payload.get('selected_unit_rawcode')
+        invoked = tuple((_validate_rawcode(str(rawcode)) for rawcode in payload.get('invoked_spell_rawcodes', [])))
+        return TelemetrySnapshot(process_id=int(payload.get('process_id', 0)), game_dll_base=int(payload.get('game_dll_base', 0)), game_time_ms=int(payload.get('game_time_ms', 0)), hero_address=int(payload.get('hero_address', 0)), hero_rawcode=str(payload.get('hero_rawcode', '----')), player_slot=int(payload.get('player_slot', 0)), selected_unit_address=int(payload.get('selected_unit_address', 0)), selected_unit_rawcode=_validate_rawcode(str(selected_rawcode)) if selected_rawcode is not None else None, selected_player_slot=int(payload['selected_player_slot']) if payload.get('selected_player_slot') is not None else None, abilities=abilities, memory_read_count=int(payload.get('memory_read_count', 0)), memory_write_count=int(payload.get('memory_write_count', 0)), invoked_spell_rawcodes=invoked)
 
-    @staticmethod
-    def _decode_response(payload: bytes) -> tuple[int, int, TelemetrySnapshot]:
-        if len(payload) != HOST_RESPONSE_SIZE:
-            raise SeekBackendError('Skills HUD получил повреждённый ответ')
-        status, detail, process_id, game_dll_base, game_time_ms, hero_address, hero_value, player_slot, selected_unit_address, selected_unit_value, selected_player_slot_value, invoked_spell_value_1, invoked_spell_value_2, ability_count, memory_read_count, memory_write_count = HOST_RESPONSE_PREFIX.unpack_from(payload)
-        if ability_count > HOST_MAX_ABILITIES:
-            raise SeekBackendError('Skills HUD получил слишком много способностей')
-        abilities: list[LiveAbilityState] = []
-        offset = HOST_RESPONSE_PREFIX.size
-        for index in range(ability_count):
-            raw_value, level, flags, cooldown_ms = HOST_ABILITY.unpack_from(payload, offset + index * HOST_ABILITY.size)
-            abilities.append(LiveAbilityState(rawcode=rawcode_text(raw_value), level=level, flags=flags, cooldown_ms=cooldown_ms))
-        hero_rawcode = '----' if hero_value == 0 else rawcode_text(hero_value)
-        selected_unit_rawcode = rawcode_text(selected_unit_value) if selected_unit_value != 0 else None
-        selected_player_slot = selected_player_slot_value if selected_player_slot_value <= 15 else None
-        invoked_spell_rawcodes = tuple((rawcode_text(value) for value in (invoked_spell_value_1, invoked_spell_value_2) if value != 0))
-        return (status, detail, TelemetrySnapshot(process_id=process_id, game_dll_base=game_dll_base, game_time_ms=game_time_ms, hero_address=hero_address, hero_rawcode=hero_rawcode, player_slot=player_slot, selected_unit_address=selected_unit_address, selected_unit_rawcode=selected_unit_rawcode, selected_player_slot=selected_player_slot, abilities=tuple(abilities), memory_read_count=memory_read_count, memory_write_count=memory_write_count, invoked_spell_rawcodes=invoked_spell_rawcodes))
-
-    def _exchange(self, command: int, payload: bytes=b'', *, accept_error: bool=False, accepted_statuses: frozenset[int]=frozenset()) -> TelemetrySnapshot:
+    def _exchange(self, command: str, fields: dict[str, object] | None=None, *, accept_error: bool=False, accepted_statuses: frozenset[int]=frozenset()) -> TelemetrySnapshot:
         with self._lock:
             if self._closed:
-                raise SeekBackendError('Skills HUD уже выключен')
+                raise SeekBackendError('Skills HUD is already closed')
             stdin = self._process.stdin
             stdout = self._process.stdout
             if stdin is None or stdout is None:
-                raise SeekBackendError('Связь со Skills HUD недоступна')
+                raise SeekBackendError('Skills HUD IPC is unavailable')
             self._request_id += 1
             request_id = self._request_id
+            request = {'protocol': HOST_PROTOCOL, 'request_id': request_id, 'command': command, **(fields or {})}
             try:
-                stdin.write(HOST_HEADER.pack(HOST_MAGIC, HOST_PROTOCOL_VERSION, command, request_id, len(payload)))
-                if payload:
-                    stdin.write(payload)
+                stdin.write(json.dumps(request, ensure_ascii=False, separators=(',', ':')) + '\n')
                 stdin.flush()
-                response_header = self._read_exact(stdout, HOST_HEADER.size)
-                magic, version, response_command, response_id, response_size = HOST_HEADER.unpack(response_header)
-                if magic != HOST_MAGIC or version != HOST_PROTOCOL_VERSION or response_command != command or (response_id != request_id) or (response_size != HOST_RESPONSE_SIZE):
-                    raise SeekBackendError('Компонент Skills HUD несовместим с программой')
-                response = self._read_exact(stdout, response_size)
-            except (BrokenPipeError, OSError) as exc:
-                raise SeekBackendError(f'Skills HUD потерял связь: {exc}') from exc
-            status, detail, snapshot = self._decode_response(response)
+                line = stdout.readline()
+                if not line:
+                    raise SeekBackendError('Skills HUD terminated unexpectedly')
+                response = json.loads(line)
+            except (BrokenPipeError, OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise SeekBackendError(f'Skills HUD IPC failed: {exc}') from exc
+            if not isinstance(response, dict) or response.get('protocol') != HOST_PROTOCOL or response.get('request_id') != request_id or (response.get('command') != command):
+                raise SeekBackendError('Skills HUD protocol mismatch')
+            status = int(response.get('status', 1))
+            detail = int(response.get('detail', 0))
+            snapshot = self._decode_snapshot(response)
             self._last_status = status
             if status and (not accept_error) and (status not in accepted_statuses):
                 message = HOST_STATUS.get(status, f'telemetry error {status}')
@@ -193,23 +162,17 @@ class NativeTelemetryHost:
         return self._last_status
 
     def set_target(self, player_slot: int, hero_rawcode: str, hero_address: int=0) -> TelemetrySnapshot:
-        return self._exchange(HOST_SET_TARGET, self._target_payload(player_slot, hero_rawcode, hero_address))
+        return self._exchange('set_target', self._target_fields(player_slot, hero_rawcode, hero_address))
 
     def prepare_targets(self, targets: list[tuple[int, str]]) -> TelemetrySnapshot:
         unique = list(dict.fromkeys(targets))[:HOST_MAX_TARGETS]
-        values: list[int] = [len(unique)]
-        for player_slot, hero_rawcode in unique:
-            if not 0 <= player_slot <= 15:
-                raise ValueError('Player slot must be in range 0..15')
-            values.extend((player_slot, rawcode_value(hero_rawcode), 0))
-        values.extend([0] * (HOST_MAX_TARGETS - len(unique)) * 3)
-        return self._exchange(HOST_PREPARE_TARGETS, HOST_TARGETS.pack(*values))
+        return self._exchange('prepare_targets', {'targets': [self._target_fields(slot, rawcode) for slot, rawcode in unique]})
 
     def snapshot(self) -> TelemetrySnapshot:
-        return self._exchange(HOST_SNAPSHOT)
+        return self._exchange('snapshot')
 
     def ping(self) -> TelemetrySnapshot:
-        return self._exchange(HOST_PING)
+        return self._exchange('ping')
 
     def close(self) -> None:
         with self._close_lock:
@@ -218,7 +181,7 @@ class NativeTelemetryHost:
                 return
             if process.poll() is None:
                 try:
-                    self._exchange(HOST_SHUTDOWN, accept_error=True)
+                    self._exchange('shutdown', accept_error=True)
                 except (SeekBackendError, OSError):
                     pass
             self._closed = True
@@ -241,9 +204,7 @@ class NativeTelemetryHost:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=1.0)
-            stderr_log = getattr(self, '_stderr_log', None)
-            if stderr_log is not None:
-                stderr_log.close()
+            self._stderr_log.close()
             LOGGER.info('Telemetry host stopped: exit_code=%s', process.returncode)
 
     def __enter__(self) -> NativeTelemetryHost:

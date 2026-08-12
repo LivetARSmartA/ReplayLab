@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     arguments = build_parser().parse_args()
     try:
-        report = parse_replay(arguments.replay)
+        report = parse_replay(arguments.replay, include_diagnostics=arguments.show_strings)
     except (OSError, ReplayParseError) as exc:
         print(f'Error: {exc}', file=sys.stderr)
         return 1
@@ -38,7 +38,7 @@ def main() -> int:
     print(f'Warcraft: {report.header.product} {report.header.version}, build {report.header.build}')
     print(f'Duration: {format_time(report.header.duration_ms)} (parsed timeline: {format_time(report.parsed_timeline_ms)})')
     print('Players: ' + ', '.join((f"{player.player_id}:{player.name or '(empty)'}" for player in report.players)))
-    print(f'Commands: {len(report.command_packets)}, chats: {len(report.chats)}, gamecache syncs: {len(report.gamecache_syncs)}, candidate strings: {len(report.string_candidates)}')
+    print(f'Commands: {report.command_packet_count}, chats: {len(report.chats)}, gamecache syncs: {report.gamecache_sync_count}, candidate strings: {report.string_candidate_count}')
     print(f'DotA kills: {len(report.kills)}, skill learns: {len(report.skill_learns)}, triple/ultra/rampage events: {sum((event.count >= 3 for event in report.multi_kills))}')
     if report.dota_players:
         print('Heroes: ' + ', '.join((f"{player.name}={player.hero_name or player.hero_rawcode or '?'}" for player in report.dota_players)))
