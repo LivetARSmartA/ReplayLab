@@ -10,7 +10,7 @@ from typing import Callable
 from .camera_input import CameraInputRouter
 from .camera_modes import CAMERA_TRANSITION_PRESETS, CameraTransitionKind, CameraTransitionSpec, CameraRigMode, DirectorFrame, OrbitDirector, SmartFollowDirector, hero_switch_transition
 from .native_camera import CameraSafetyLimits, CameraTransitionCommand, DroneInput, DroneSettings, NativeCameraHost, configured_camera_update_hz
-from .seeker import CameraState, SeekBackendError, Warcraft126MemoryBackend
+from .seeker import CameraState, SeekBackendError
 
 @dataclass(frozen=True)
 class CameraMotionSettings:
@@ -74,7 +74,7 @@ class SmoothCameraController:
     VK_DOWN = 40
     CONTROL_KEYS = {VK_PRIOR, VK_NEXT, VK_END, VK_HOME, VK_INSERT, VK_DELETE, VK_LEFT, VK_UP, VK_RIGHT, VK_DOWN}
 
-    def __init__(self, backend: Warcraft126MemoryBackend, input_router: CameraInputRouter, *, on_error: Callable[[str], None] | None=None, on_state: Callable[[CameraState], None] | None=None, on_follow_lost: Callable[[str], None] | None=None) -> None:
+    def __init__(self, backend: NativeCameraHost, input_router: CameraInputRouter, *, on_error: Callable[[str], None] | None=None, on_state: Callable[[CameraState], None] | None=None, on_follow_lost: Callable[[str], None] | None=None) -> None:
         if os.name != 'nt':
             raise SeekBackendError('Camera controller requires Windows')
         self._backend = backend
@@ -108,7 +108,8 @@ class SmoothCameraController:
         self._home_state = backend.camera_state()
         self._safety = camera_safety_limits(self._home_state)
         self._native_update_hz = configured_camera_update_hz()
-        self._native = NativeCameraHost(backend.camera_runtime_session(), update_hz=self._native_update_hz, limits=self._safety)
+        backend.configure(update_hz=self._native_update_hz, limits=self._safety)
+        self._native = backend
         self._user32.GetForegroundWindow.restype = wintypes.HWND
         self._user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
         self._user32.GetWindowThreadProcessId.restype = wintypes.DWORD

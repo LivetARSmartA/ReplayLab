@@ -1,7 +1,7 @@
 from __future__ import annotations
 import ctypes
-import hashlib
 import os
+import signal
 import shutil
 import subprocess
 import sys
@@ -10,7 +10,8 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
-from .warcraft_build import WARCRAFT_126A_WAR3_SHA256, WarcraftBuildError, match_game_dll
+from .native_runtime_host import NativeRuntimeError, native_file_sha256
+from .warcraft_build import WarcraftBuildError, match_game_dll
 from .warcraft_glue import MapListState, WarcraftGlueChannel, WarcraftGlueError
 
 class WarcraftLaunchError(RuntimeError):
@@ -59,11 +60,10 @@ _PYWIN32_DLL_DIRECTORY_HANDLES: list[object] = []
 _PYWIN32_DLL_DIRECTORIES: set[str] = set()
 
 def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open('rb') as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b''):
-            digest.update(chunk)
-    return digest.hexdigest().upper()
+    try:
+        return native_file_sha256(path)
+    except NativeRuntimeError as exc:
+        raise WarcraftLaunchError(str(exc)) from exc
 
 def build_launch_command(executable: str | Path, replay: str | Path) -> list[str]:
     game = Path(executable).resolve()
@@ -79,6 +79,8 @@ def build_launch_command(executable: str | Path, replay: str | Path) -> list[str
 class WarcraftReplayLauncher:
     TH32CS_SNAPPROCESS = 2
     PROCESS_QUERY_LIMITED_INFORMATION = 4096
+    SYNCHRONIZE = 1048576
+    STILL_ACTIVE = 259
     INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
     WM_CLOSE = 16
     SW_RESTORE = 9
@@ -111,6 +113,8 @@ class WarcraftReplayLauncher:
         self._kernel32.OpenProcess.restype = wintypes.HANDLE
         self._kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
         self._kernel32.CloseHandle.restype = wintypes.BOOL
+        self._kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        self._kernel32.GetExitCodeProcess.restype = wintypes.BOOL
         self._kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
         self._kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
         self._user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
@@ -235,6 +239,47 @@ class WarcraftReplayLauncher:
             time.sleep(0.1)
         raise WarcraftLaunchError('Warcraft не закрылся сам. Закрой игру вручную и повтори запуск.')
 
+    def open_process_exit_handle(self, pid: int) -> int:
+        handle = self._kernel32.OpenProcess(self.PROCESS_QUERY_LIMITED_INFORMATION | self.SYNCHRONIZE, False, pid)
+        if not handle:
+            raise WarcraftLaunchError(f'Windows could not open Warcraft to verify its exit status (PID {pid}).')
+        return handle
+
+    def process_exit_code(self, handle: int, pid: int) -> int:
+        exit_code = wintypes.DWORD()
+        if not self._kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            raise WarcraftLaunchError(f'Windows could not read Warcraft exit status (PID {pid}).')
+        return int(exit_code.value)
+
+    def close_process_exit_handle(self, handle: int) -> None:
+        self._kernel32.CloseHandle(handle)
+
+    def _close_failed_iccup_game(self, game: Path, previous_pids: set[int], launcher_pid: int | None) -> None:
+        launched = [process for process in self.running() if process.pid not in previous_pids and process.executable is not None and (process.executable.resolve() == game) and (launcher_pid is None or process.parent_pid == launcher_pid)]
+        if not launched:
+            return
+        try:
+            self.close_gracefully(launched)
+            return
+        except WarcraftLaunchError:
+            pass
+        for process in launched:
+            try:
+                os.kill(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+    def close_gracefully_checked(self, processes: list[WarcraftProcess], timeout_seconds: float=8.0) -> dict[int, int]:
+        handles: dict[int, int] = {}
+        try:
+            for process in processes:
+                handles[process.pid] = self.open_process_exit_handle(process.pid)
+            self.close_gracefully(processes, timeout_seconds)
+            return {pid: self.process_exit_code(handle, pid) for pid, handle in handles.items()}
+        finally:
+            for handle in handles.values():
+                self.close_process_exit_handle(handle)
+
     def launch(self, executable: str | Path, replay: str | Path, *, replace_running: bool) -> int:
         build_launch_command(executable, replay)
         game = Path(executable).resolve()
@@ -303,7 +348,7 @@ class WarcraftReplayLauncher:
         virtual_key, scan_code, extended = key
         channel.post_key(virtual_key, scan_code, extended=extended)
 
-    def _wait_for_signature(self, channel: WarcraftGlueChannel, target: bytes, *, phase: str, timeout_seconds: float, source: bytes | None=None, transition_key: tuple[int, int, bool] | None=None) -> None:
+    def _wait_for_signature(self, channel: WarcraftGlueChannel, target: bytes, *, phase: str, timeout_seconds: float, source: bytes | None=None, transition_key: tuple[int, int, bool] | None=None, cancelled: Callable[[], bool] | None=None) -> None:
         deadline = time.monotonic() + timeout_seconds
         next_attempt = 0.0
         source_seen = source is None
@@ -311,6 +356,8 @@ class WarcraftReplayLauncher:
         if source is not None:
             patterns.add(source)
         while time.monotonic() < deadline:
+            if cancelled is not None and cancelled():
+                raise WarcraftLaunchError('Warcraft replay launch was cancelled')
             found = channel.private_signatures(patterns)
             if target in found:
                 return
@@ -325,11 +372,13 @@ class WarcraftReplayLauncher:
         raise WarcraftLaunchError(f'Таймаут этапа «{phase}»: {detail}, но целевой экран Warcraft не подтверждён.')
 
     @staticmethod
-    def _wait_for_map_list(channel: WarcraftGlueChannel, predicate: Callable[[MapListState], bool], *, phase: str, timeout_seconds: float, action: Callable[[], None] | None=None) -> MapListState:
+    def _wait_for_map_list(channel: WarcraftGlueChannel, predicate: Callable[[MapListState], bool], *, phase: str, timeout_seconds: float, action: Callable[[], None] | None=None, cancelled: Callable[[], bool] | None=None) -> MapListState:
         deadline = time.monotonic() + timeout_seconds
         next_attempt = 0.0
         last_state: MapListState | None = None
         while time.monotonic() < deadline:
+            if cancelled is not None and cancelled():
+                raise WarcraftLaunchError('Warcraft replay launch was cancelled')
             state = channel.map_list_state()
             last_state = state
             if state is not None and predicate(state):
@@ -342,23 +391,23 @@ class WarcraftReplayLauncher:
         state_note = 'CMapList не найден' if last_state is None else f'каталог={last_state.current_directory!r}, индекс={last_state.selected_index}'
         raise WarcraftLaunchError(f'Таймаут этапа «{phase}»: {state_note}.')
 
-    def _open_staged_replay(self, channel: WarcraftGlueChannel, staging_directory: Path) -> None:
-        self._wait_for_signature(channel, WarcraftGlueChannel.CMAIN_MENU, phase='главное меню', timeout_seconds=30.0)
-        self._wait_for_signature(channel, WarcraftGlueChannel.CSINGLE_PLAYER_MENU, source=WarcraftGlueChannel.CMAIN_MENU, transition_key=self.VK_S, phase='Один игрок', timeout_seconds=15.0)
-        self._wait_for_signature(channel, WarcraftGlueChannel.CVIEW_REPLAY_SCREEN, source=WarcraftGlueChannel.CSINGLE_PLAYER_MENU, transition_key=self.VK_R, phase='Загрузка ролика', timeout_seconds=15.0)
-        self._wait_for_signature(channel, WarcraftGlueChannel.CMAP_LIST, phase='список replay', timeout_seconds=10.0)
-        self._wait_for_map_list(channel, lambda state: state.current_directory == '', phase='корень Replay', timeout_seconds=10.0)
+    def _open_staged_replay(self, channel: WarcraftGlueChannel, staging_directory: Path, cancelled: Callable[[], bool] | None=None) -> None:
+        self._wait_for_signature(channel, WarcraftGlueChannel.CMAIN_MENU, phase='главное меню', timeout_seconds=30.0, cancelled=cancelled)
+        self._wait_for_signature(channel, WarcraftGlueChannel.CSINGLE_PLAYER_MENU, source=WarcraftGlueChannel.CMAIN_MENU, transition_key=self.VK_S, phase='Один игрок', timeout_seconds=15.0, cancelled=cancelled)
+        self._wait_for_signature(channel, WarcraftGlueChannel.CVIEW_REPLAY_SCREEN, source=WarcraftGlueChannel.CSINGLE_PLAYER_MENU, transition_key=self.VK_R, phase='Загрузка ролика', timeout_seconds=15.0, cancelled=cancelled)
+        self._wait_for_signature(channel, WarcraftGlueChannel.CMAP_LIST, phase='список replay', timeout_seconds=10.0, cancelled=cancelled)
+        self._wait_for_map_list(channel, lambda state: state.current_directory == '', phase='корень Replay', timeout_seconds=10.0, cancelled=cancelled)
         expected_directory = staging_directory.name + '\\'
 
         def enter_staging_directory() -> None:
             self._post_key(channel, self.VK_HOME)
             self._post_key(channel, self.VK_ENTER)
-        self._wait_for_map_list(channel, lambda state: state.current_directory.casefold() == expected_directory.casefold(), phase=f'каталог {staging_directory.name}', timeout_seconds=15.0, action=enter_staging_directory)
+        self._wait_for_map_list(channel, lambda state: state.current_directory.casefold() == expected_directory.casefold(), phase=f'каталог {staging_directory.name}', timeout_seconds=15.0, action=enter_staging_directory, cancelled=cancelled)
 
         def select_current() -> None:
             self._post_key(channel, self.VK_HOME)
             self._post_key(channel, self.VK_DOWN)
-        selected = self._wait_for_map_list(channel, lambda state: state.selected_index == 1 and state.selected_pointer >= 65536, phase='выбор current.w3g', timeout_seconds=10.0, action=select_current)
+        selected = self._wait_for_map_list(channel, lambda state: state.selected_index == 1 and state.selection_ready, phase='выбор current.w3g', timeout_seconds=10.0, action=select_current, cancelled=cancelled)
         if selected.current_directory.casefold() != expected_directory.casefold():
             raise WarcraftLaunchError('Warcraft выбрал current.w3g не в служебном каталоге ReplayLab.')
 
@@ -393,24 +442,23 @@ class WarcraftReplayLauncher:
         errors: dict[Path, OSError] = {}
         for candidate in candidates:
             try:
-                with candidate.open('rb') as source:
-                    source.seek(0, os.SEEK_END)
-                    size = source.tell()
-                modified_ns = candidate.stat().st_mtime_ns
+                metadata = candidate.stat()
             except (FileNotFoundError, NotADirectoryError):
                 continue
             except OSError as exc:
                 errors[candidate] = exc
                 continue
-            snapshot[candidate] = (size, modified_ns)
+            snapshot[candidate] = (metadata.st_size, metadata.st_mtime_ns)
         return (snapshot, errors)
 
     @classmethod
-    def _wait_for_guard_log(cls, candidates: tuple[Path, ...], baseline: dict[Path, tuple[int, int]], timeout_seconds: float=10.0) -> Path:
+    def _wait_for_guard_log(cls, candidates: tuple[Path, ...], baseline: dict[Path, tuple[int, int]], timeout_seconds: float=10.0, cancelled: Callable[[], bool] | None=None) -> Path:
         deadline = time.monotonic() + timeout_seconds
         latest_snapshot: dict[Path, tuple[int, int]] = {}
         latest_errors: dict[Path, OSError] = {}
         while True:
+            if cancelled is not None and cancelled():
+                raise WarcraftLaunchError('Warcraft replay launch was cancelled')
             latest_snapshot, latest_errors = cls._guard_log_snapshot(candidates)
             changed = [candidate for candidate, state in latest_snapshot.items() if baseline.get(candidate) != state]
             if changed:
@@ -426,21 +474,23 @@ class WarcraftReplayLauncher:
         checked = '\n'.join((f'- {candidate}' for candidate in candidates))
         raise WarcraftLaunchError(f'iCCup не создал диагностический журнал после запуска Warcraft. Проверены пути:\n{checked}')
 
-    @staticmethod
-    def _read_guard_delta(guard_log: Path, start_offset: int) -> str:
+    def _read_guard_delta(self, channel: WarcraftGlueChannel, guard_log: Path, start_offset: int) -> str:
         if not guard_log.is_file():
             raise WarcraftLaunchError(f'Не найден диагностический журнал iCCup: {guard_log}')
         if guard_log.stat().st_size < start_offset:
             raise WarcraftLaunchError('Журнал iCCup был очищен во время запуска replay.')
-        with guard_log.open('rb') as source:
-            source.seek(start_offset)
-            return source.read().decode('utf-8', errors='replace')
+        try:
+            return channel.read_text_tail(guard_log, start_offset)
+        except WarcraftGlueError as exc:
+            raise WarcraftLaunchError(str(exc)) from exc
 
-    def _wait_for_guard_confirmation(self, guard_log: Path, start_offset: int, timeout_seconds: float=20.0) -> None:
+    def _wait_for_guard_confirmation(self, channel: WarcraftGlueChannel, guard_log: Path, start_offset: int, timeout_seconds: float=20.0, cancelled: Callable[[], bool] | None=None) -> None:
         deadline = time.monotonic() + timeout_seconds
         last_text = ''
         while time.monotonic() < deadline:
-            last_text = self._read_guard_delta(guard_log, start_offset)
+            if cancelled is not None and cancelled():
+                raise WarcraftLaunchError('Warcraft replay launch was cancelled')
+            last_text = self._read_guard_delta(channel, guard_log, start_offset)
             if 'Loading ICCup replay file' in last_text and 'Got MapFileInfo' in last_text:
                 return
             time.sleep(0.1)
@@ -448,36 +498,37 @@ class WarcraftReplayLauncher:
         raise WarcraftLaunchError('Таймаут подтверждения iCCup: ' + ('replay принят, но MapFileInfo не появился.' if loaded else 'guard не подтвердил загрузку staged replay.'))
 
     @staticmethod
-    def _wait_for_live_replay(pid: int, timeout_seconds: float=30.0) -> None:
-        from .seeker import SeekBackendError, Warcraft126MemoryBackend
+    def _wait_for_live_replay(pid: int, timeout_seconds: float=30.0, cancelled: Callable[[], bool] | None=None) -> None:
+        from .native_replay_transport import NativeReplayTransport
+        from .seeker import SeekBackendError
         deadline = time.monotonic() + timeout_seconds
         last_error = 'active replay block не найден'
         while time.monotonic() < deadline:
-            backend = Warcraft126MemoryBackend()
+            if cancelled is not None and cancelled():
+                raise WarcraftLaunchError('Warcraft replay launch was cancelled')
+            transport = NativeReplayTransport(pid)
             try:
-                result = backend.attach()
+                result = transport
                 if result.pid != pid:
                     last_error = f'replay найден в PID {result.pid}, ожидался PID {pid}'
-                elif backend.is_replay_active():
+                elif transport.replay_block > 0:
                     return
                 else:
                     last_error = 'replay block найден, но LOOP не активен'
             except SeekBackendError as exc:
                 last_error = str(exc)
             finally:
-                backend.close()
+                transport.close()
             time.sleep(0.1)
         raise WarcraftLaunchError('Таймаут этапа «живой replay»: ' + last_error)
 
-    def launch_via_iccup(self, iccup_launcher: str | Path, executable: str | Path, replay: str | Path, *, replace_running: bool) -> int:
+    def launch_via_iccup(self, iccup_launcher: str | Path, executable: str | Path, replay: str | Path, *, replace_running: bool, cancelled: Callable[[], bool] | None=None) -> int:
         build_launch_command(executable, replay)
         launcher_path = Path(iccup_launcher).resolve()
         if not launcher_path.is_file():
             raise WarcraftLaunchError(f'Не найден iCCup Launcher: {launcher_path}')
         game = Path(executable).resolve()
         replay_path = Path(replay).resolve()
-        if _file_sha256(game) != WARCRAFT_126A_WAR3_SHA256:
-            raise WarcraftLaunchError('Cursor-free запуск поддерживает только проверенный war3.exe Warcraft III 1.26a build 6401.')
         try:
             game_dll_match = match_game_dll(game.with_name('Game.dll'))
         except (OSError, WarcraftBuildError) as exc:
@@ -492,11 +543,15 @@ class WarcraftReplayLauncher:
         staged_replay = self._stage_replay(game, replay_path)
         staging_directory = staged_replay.parent
         Desktop = self._prepare_pywinauto()
+        previous_pids = {process.pid for process in self.running()}
+        launcher_pid: int | None = None
         try:
             launcher_window = None
             launcher_started = False
             deadline = time.monotonic() + 30.0
             while time.monotonic() < deadline:
+                if cancelled is not None and cancelled():
+                    raise WarcraftLaunchError('Warcraft replay launch was cancelled')
                 launcher_processes = self._running_iccup_processes()
                 for process in launcher_processes:
                     window = self._find_window(process.pid, title='iCCup Launcher')
@@ -535,6 +590,8 @@ class WarcraftReplayLauncher:
                 game_process = None
                 deadline = time.monotonic() + 30.0
                 while time.monotonic() < deadline:
+                    if cancelled is not None and cancelled():
+                        raise WarcraftLaunchError('Warcraft replay launch was cancelled')
                     candidates = [process for process in self.running() if process.pid not in previous_pids and process.executable is not None and (process.executable.resolve() == game) and (process.parent_pid == launcher_pid)]
                     if candidates:
                         game_process = candidates[0]
@@ -545,6 +602,8 @@ class WarcraftReplayLauncher:
                 game_window = None
                 deadline = time.monotonic() + 30.0
                 while time.monotonic() < deadline:
+                    if cancelled is not None and cancelled():
+                        raise WarcraftLaunchError('Warcraft replay launch was cancelled')
                     game_window = self._find_window(game_process.pid, title='Warcraft III')
                     if game_window is not None:
                         input_guard.lock(game_window.handle)
@@ -552,19 +611,22 @@ class WarcraftReplayLauncher:
                     time.sleep(0.05)
                 if game_window is None:
                     raise WarcraftLaunchError('Процесс Warcraft создан iCCup, но окно «Warcraft III» не появилось за 30 секунд.')
-                guard_log = self._wait_for_guard_log(guard_candidates, guard_baseline)
+                guard_log = self._wait_for_guard_log(guard_candidates, guard_baseline, cancelled=cancelled)
                 self._user32.ShowWindow(game_window.handle, self.SW_RESTORE)
                 with WarcraftGlueChannel(self._kernel32, self._user32, game_process.pid, game_window.handle, game) as channel:
-                    self._open_staged_replay(channel, staging_directory)
+                    self._open_staged_replay(channel, staging_directory, cancelled=cancelled)
                     guard_offset = guard_log.stat().st_size
                     self._post_key(channel, self.VK_ENTER)
-                    self._wait_for_guard_confirmation(guard_log, guard_offset)
-                    self._wait_for_live_replay(game_process.pid)
+                    self._wait_for_guard_confirmation(channel, guard_log, guard_offset, cancelled=cancelled)
+                    self._wait_for_live_replay(game_process.pid, cancelled=cancelled)
         except WarcraftLaunchError:
+            self._close_failed_iccup_game(game, previous_pids, launcher_pid)
             raise
         except WarcraftGlueError as exc:
+            self._close_failed_iccup_game(game, previous_pids, launcher_pid)
             raise WarcraftLaunchError(str(exc)) from exc
         except Exception as exc:
+            self._close_failed_iccup_game(game, previous_pids, launcher_pid)
             raise WarcraftLaunchError(f'Cursor-free запуск через iCCup завершился ошибкой: {type(exc).__name__}: {exc}') from exc
         self._owned_process = None
         self._owned_pid = game_process.pid
